@@ -1,0 +1,4 @@
+*.pyc
+
+/dist
+/src/doxy_sip.egg-info

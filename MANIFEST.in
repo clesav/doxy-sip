@@ -1,0 +1,3 @@
+#Excluded pycache
+global-exclude *.pyc
+
