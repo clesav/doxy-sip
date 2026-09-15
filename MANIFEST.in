@@ -1,3 +1,4 @@
 #Excluded pycache
 global-exclude *.pyc
 
+include DOCUMENTATION.rst

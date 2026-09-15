@@ -432,7 +432,6 @@ class SIPEnumDirective(_AutoDirective):
             return self._generate_error(f'No enumeration {enum_name} in SIP spec')
 
         enum_fq_cpp_name = sip_enum.fq_cpp_name.cpp_stripped(-1)
-        #dox_enum = dox_struct.get_dox_global_member(self.env.domains['sip'], enum_fq_cpp_name, 'enum')
         dox_enum = dox_struct.get_dox_enum(self.env.domains['sip'], enum_fq_cpp_name)
 
         decl = combiner.combine_enum_declaration(sip_enum, dox_enum)
