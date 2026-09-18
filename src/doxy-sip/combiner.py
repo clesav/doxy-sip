@@ -355,6 +355,38 @@ def combine_class_enum_declaration(sip_enum, dox_klass):
     return combine_enum_declaration(sip_enum, dox_enum)
 
 
+#==============================================================================
+
+@dataclasses.dataclass
+class PropertyDeclaration:
+    name:str
+    type_: str|None
+    description : str|None
+
+def combine_property_declaration(sip_spec, sip_klass, sip_prop):
+    getter_member = None
+    for m in sip_klass.members:
+        if m.py_name.name == sip_prop.getter:
+            getter_member = m
+            break
+
+    #Infer the property type from the getter result type
+    result_type = None
+    if getter_member:
+        c = sip_struct.SIP_Callable(sip_spec, sip_klass, getter_member)
+        for ovr in c.overloads:
+            if not len(ovr.py_signature.args):
+                result_type = sip_struct.signature_as_result_type_hint(sip_spec, ovr.py_signature)
+                break
+
+    _, description = _parse_docstring(sip_prop.docstring)
+
+    return PropertyDeclaration(sip_prop.name.name, result_type, description)
+
+
+#==============================================================================
+
+
 def combine_class_variable_declaration(sip_spec, sip_klass, dox_klass):
     klass_vars = [ v for v in sip_spec.variables
                    if v.module is sip_spec.module and v.scope is sip_klass ]
