@@ -312,6 +312,51 @@ def signature_as_cpp_declaration(spec, cpp_signature):
     return ', '.join(args)
 
 
+def signature_as_result_type_hint(spec, py_signature):
+    '''Returns the signature type hint for the result
+    Snippet from sipbuild's fmt_signature_as_type_hint()'''
+
+    nr_out = sum(1 for arg in py_signature.args if arg.is_out)
+
+    # Handle the output values.
+    result = py_signature.result
+
+    if result is None or (result.type is ArgumentType.VOID and len(result.derefs) == 0):
+        is_result = False
+    else:
+        type_hints = result.type_hints
+
+        # An empty type hint specifies a void return.
+        if type_hints is not None and type_hints.hint_out is not None and type_hints.hint_out == '':
+            is_result = False
+        else:
+            is_result = True
+
+    if is_result or nr_out > 0:
+        out_args = []
+
+        if is_result:
+            type_hint = fmt_argument_as_type_hint(spec, result, None)
+            if type_hint:
+                out_args.append(type_hint)
+
+        for arg in py_signature.args:
+            if arg.is_out:
+                type_hint = fmt_argument_as_type_hint(spec, arg, None)
+                if type_hint:
+                    out_args.append(type_hint)
+
+        results_s = ', '.join(out_args)
+
+        if (is_result and nr_out > 0) or nr_out > 1: #needs_tuplr
+            results_s = f'({results_s})'
+
+        return results_s
+
+    else:
+        return 'None'
+
+
 def get_sip_spec(domain, sip_module_name):
     specs = domain.data['sip_specs']
 
@@ -375,6 +420,14 @@ def get_sip_enum(spec, enum_name):
         if get_scoped_py_name(spec, e) == enum_name:
             return e
     return None
+
+
+def get_sip_class_property(spec, name):
+    for k in spec.classes:
+        for p in k.properties:
+            if get_scoped_py_name(spec, k) + '.' + p.name.name == name:
+                return k, p
+    return None, None
 
 
 def render_docstring(docstring):

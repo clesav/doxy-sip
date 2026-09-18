@@ -206,6 +206,10 @@ class _AutoDirective(_SIPDirective):
         method_lines = list(self._generate_methods(sip_klass, dox_klass))
         _add_lines_to_result(method_lines, klass_lines, "   ")
 
+        #Add the properties
+        property_lines = list(self._generate_properties(sip_klass))
+        _add_lines_to_result(property_lines, klass_lines, "   ")
+
         #Add the variables
         var_lines = list(self._generate_class_attributes(sip_klass, dox_klass))
         _add_lines_to_result(var_lines, klass_lines, "   ")
@@ -331,6 +335,25 @@ class _AutoDirective(_SIPDirective):
                 yield ""
 
 
+    def _generate_properties(self, sip_klass):
+        if len(sip_klass.properties):
+            yield "**Properties**:"
+            yield ""
+            for p in sip_klass.properties:
+                yield from self._generate_property(sip_klass, p)
+
+
+    def _generate_property(self, sip_klass, sip_prop):
+        decl = combiner.combine_property_declaration(self.sip_spec, sip_klass, sip_prop)
+        yield f".. py:property:: {decl.name}"
+        if decl.type_:
+            yield f"   :type: {decl.type_}"
+        yield ""
+        if decl.description:
+            yield from _yield_indented_lines(decl.description, "   ")
+            yield ""
+
+
     def _generate_class_attributes(self, sip_klass, dox_klass):
         klass_vars_decl = combiner.combine_class_variable_declaration(self.sip_spec, sip_klass, dox_klass)
 
@@ -442,6 +465,30 @@ class SIPEnumDirective(_AutoDirective):
         _add_lines_to_result(self.content.data, enum_lines, "   ")
 
         nodes = _parse_generated_content(self.state, enum_lines)
+
+        return nodes
+
+
+class SIPPropertyDirective(_AutoDirective):
+    '''Directive to document a property.
+    '''
+
+    required_arguments = 1
+
+    def run_sip_directive(self):
+
+        prop_name = self.arguments[0]
+
+        #Get the wrapped class object from the specification
+        sip_klass, sip_prop = sip_struct.get_sip_class_property(self.sip_spec, prop_name)
+        if sip_prop is None:
+            return self._generate_error(f'No class property {prop_name} in SIP spec')
+
+        lines = list(self._generate_property(sip_klass, sip_prop))
+
+        _add_lines_to_result(self.content.data, lines, "   ")
+
+        nodes = _parse_generated_content(self.state, lines)
 
         return nodes
 
