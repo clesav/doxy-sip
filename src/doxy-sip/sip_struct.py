@@ -408,24 +408,24 @@ def get_sip_spec(domain, sip_module_name):
     return spec
 
 
-def get_sip_klass(spec, klass_name):
+def find_sip_klass(spec, klass_name):
     for k in spec.classes:
-        if get_scoped_py_name(spec, k) == klass_name:
+        if get_scoped_py_name(k) == klass_name:
             return k
     return None
 
 
-def get_sip_enum(spec, enum_name):
+def find_sip_enum(spec, enum_name):
     for e in spec.enums:
-        if get_scoped_py_name(spec, e) == enum_name:
+        if get_scoped_py_name(e) == enum_name:
             return e
     return None
 
 
-def get_sip_class_property(spec, name):
+def find_sip_property(spec, name):
     for k in spec.classes:
         for p in k.properties:
-            if get_scoped_py_name(spec, k) + '.' + p.name.name == name:
+            if get_scoped_py_name(k) + '.' + p.name.name == name:
                 return k, p
     return None, None
 
@@ -445,6 +445,6 @@ def render_superclasses(spec, klass):
         return []
 
 
-def get_scoped_py_name(spec, klass):
+def get_scoped_py_name(klass):
     return fmt_scoped_py_name(klass.scope, klass.py_name.name)
 

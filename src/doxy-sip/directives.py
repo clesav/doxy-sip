@@ -7,6 +7,7 @@ from sphinx.directives import SphinxDirective
 from sphinx.util.docutils import switch_source_input
 from sphinx.util.parsing import nested_parse_to_nodes
 from docutils.statemachine import StringList
+from docutils.parsers.rst import directives
 from sphinx.util import logging
 from sphinx import addnodes
 from sphinx.domains.python import PyObject
@@ -94,6 +95,19 @@ class _SIPDirective(SphinxDirective):
             return None
 
 
+    def _find_matching_dox_class(self, sip_klass, kind):
+        kinds = []
+        if kind in ('any', 'class_like'):
+            kinds.extend(('class', 'struct', 'union'))
+        if kind in ('any', 'namespace'):
+            kinds.append('namespace')
+
+        #Use the class C++ name, with the global scope stripped
+        klass_fq_cpp_name = sip_klass.iface_file.fq_cpp_name.cpp_stripped(-1)
+        dox_klass = dox_struct.get_dox_class(self.env.domains['sip'], klass_fq_cpp_name, kinds)
+        return dox_klass
+
+
 class SIPModuleDirective(_SIPDirective):
 
     required_arguments = 0
@@ -123,15 +137,12 @@ class SIPModuleDirective(_SIPDirective):
         return nodes
 
 
-_dummy_option_converter = lambda x: x
-
-
 class _AutoDirectiveOptions:
 
     OPTION_SPEC = {
-        'members': _dummy_option_converter,
-        'undoc-members': _dummy_option_converter,
-        'undoc-slots': _dummy_option_converter,
+        'members': directives.flag,
+        'undoc-members': directives.flag,
+        'undoc-slots': directives.flag,
     }
 
     def __init__(self, options):
@@ -218,7 +229,7 @@ class _AutoDirective(_SIPDirective):
 
 
     def _generate_class_header(self, sip_klass):
-        klass_scoped_py_name = sip_struct.get_scoped_py_name(self.sip_spec, sip_klass)
+        klass_scoped_py_name = sip_struct.get_scoped_py_name(sip_klass)
         yield f".. py:class:: {klass_scoped_py_name}"
 
         if sip_klass.is_abstract:
@@ -382,13 +393,11 @@ class SIPClassDirective(_AutoDirective):
         klass_name = self.arguments[0]
 
         #Get the wrapped class object from the specification
-        sip_klass = sip_struct.get_sip_klass(self.sip_spec, klass_name)
+        sip_klass = sip_struct.find_sip_klass(self.sip_spec, klass_name)
         if sip_klass is None or sip_klass.class_key is None:
             return self._generate_error(f'No class {klass_name} in SIP spec')
 
-        #Use the class C++ name, with the global scope stripped
-        klass_fq_cpp_name = sip_klass.iface_file.fq_cpp_name.cpp_stripped(-1)
-        dox_klass = dox_struct.get_dox_class(self.env.domains['sip'], klass_fq_cpp_name, ('class', 'struct', 'union'))
+        dox_klass = self._find_dox_class(sip_klass, 'class_like')
 
         klass_lines = self._generate_class(sip_klass, dox_klass)
 
@@ -412,22 +421,13 @@ class SIPNamespaceDirective(_AutoDirective):
 
         ns_name = self.arguments[0]
 
-        sip_NS = sip_struct.get_sip_klass(self.sip_spec, ns_name)
+        sip_NS = sip_struct.find_sip_klass(self.sip_spec, ns_name)
         if sip_NS is None or sip_NS.class_key is not None:
             return self._generate_error(f'No namespace {ns_name} in SIP spec')
 
-        #Use the namespace C++ name, with the global scope stripped
-        ns_fq_cpp_name = sip_NS.iface_file.fq_cpp_name.cpp_stripped(-1)
-        dox_ns = dox_struct.get_dox_class(self.env.domains['sip'], ns_fq_cpp_name, ('namespace',))
+        dox_NS = self._find_matching_dox_class(sip_NS, 'namespace')
 
-        _, desc = combiner.merge_description(sip_NS.docstring, dox_ns)
-
-        lines = [".. py:class:: " + ns_name, ""]
-        if desc:
-            _add_lines_to_result(desc, lines, "   ")
-            lines.append("")
-
-        _add_lines_to_result(self.content.data, lines, "   ")
+        lines = self._generate_class(sip_NS, dox_NS)
 
         nodes = _parse_generated_content(self.state, lines)
 
@@ -450,7 +450,7 @@ class SIPEnumDirective(_AutoDirective):
         enum_name = self.arguments[0]
 
         #Get the wrapped class object from the specification
-        sip_enum = sip_struct.get_sip_enum(self.sip_spec, enum_name)
+        sip_enum = sip_struct.find_sip_enum(self.sip_spec, enum_name)
         if sip_enum is None:
             return self._generate_error(f'No enumeration {enum_name} in SIP spec')
 
@@ -480,7 +480,7 @@ class SIPPropertyDirective(_AutoDirective):
         prop_name = self.arguments[0]
 
         #Get the wrapped class object from the specification
-        sip_klass, sip_prop = sip_struct.get_sip_class_property(self.sip_spec, prop_name)
+        sip_klass, sip_prop = sip_struct.find_sip_property(self.sip_spec, prop_name)
         if sip_prop is None:
             return self._generate_error(f'No class property {prop_name} in SIP spec')
 
