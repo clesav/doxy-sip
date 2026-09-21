@@ -101,7 +101,11 @@ def get_dox_enum(domain, name):
         for index_member_node in index_cpd_node.find_children('member'):
             if index_member_node.attr('kind') != 'enum': continue
             if index_member_node.child_text('name') != basename: continue
-            if index_cpd_node.child_text('name') != namespace: continue
+            if namespace is None:
+                #Global enums belong to a 'file' compound
+                if index_cpd_node.attr('kind') != 'file': continue
+            else:
+                if index_cpd_node.child_text('name') != namespace: continue
 
             cpd_refid = index_cpd_node.attr('refid')
             cpd_root = _load_dox_compound(domain, cpd_refid)

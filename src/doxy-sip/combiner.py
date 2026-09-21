@@ -317,7 +317,16 @@ def combine_overload_declaration(sip_spec, overload, dox_klass):
     return fct_desc
 
 
-def combine_enum_declaration(sip_enum, dox_enum):
+#==============================================================================
+
+@dataclasses.dataclass
+class EnumDeclaration:
+    signature: str
+    description: str|None
+    members: list[tuple[str, str|None]]|None
+
+
+def combine_enum(sip_enum, dox_enum):
     superclass = 'int'
     if sip_enum.base_type is sip_struct.EnumBaseType.ENUM:
         superclass = 'enum.Enum'
@@ -345,14 +354,14 @@ def combine_enum_declaration(sip_enum, dox_enum):
                     break
         members_decl.append((member.py_name.name, desc))
 
-    return sig, enum_desc, members_decl
+    return EnumDeclaration(sig, enum_desc, members_decl)
 
 
-def combine_class_enum_declaration(sip_enum, dox_klass):
+def combine_class_enum(sip_enum, dox_klass):
     enum_cpp_name = sip_enum.fq_cpp_name.base_name
     enum_match = lambda m : m.child_text('name') == enum_cpp_name
     dox_enum = _find_dox_member_by_kind(dox_klass, 'enum', enum_match)
-    return combine_enum_declaration(sip_enum, dox_enum)
+    return combine_enum(sip_enum, dox_enum)
 
 
 #==============================================================================
