@@ -205,8 +205,10 @@ class _AutoDirective(_SIPDirective):
                 _add_lines_to_result(subklass_lines, klass_lines, "      ")
 
             #Add the enumerations
-            if sub_enums:
-                enum_lines = list(self._generate_class_enums(sub_enums, dox_klass))
+            for se in sub_enums:
+                decl = combiner.combine_class_enum(se, dox_klass)
+                enum_lines = list(self._generate_enum(decl))
+                enum_lines.append("")
                 _add_lines_to_result(enum_lines, klass_lines, "      ")
 
         #Add the constructors
@@ -242,27 +244,20 @@ class _AutoDirective(_SIPDirective):
             yield ""
 
 
-    def _generate_enum(self, sig, enum_desc, members_desc_list):
-        yield ".. py:class:: " + sig
+    def _generate_enum(self, decl):
+        yield ".. py:class:: " + decl.signature
         yield ""
-        if enum_desc:
-            yield from _yield_indented_lines(enum_desc, "   ")
+        if decl.description:
+            yield from _yield_indented_lines(decl.description, "   ")
             yield ""
         yield "   **Enumeration values:**"
         yield ""
-        for name, desc in members_desc_list:
+        for name, desc in decl.members:
             yield "   .. py:attribute:: " + name
             yield ""
             if desc is not None:
                 yield from _yield_indented_lines(desc, "      ")
                 yield ""
-
-
-    def _generate_class_enums(self, sip_enums, dox_klass):
-        for se in sip_enums:
-            enum_decl = combiner.combine_class_enum_declaration(se, dox_klass)
-            sig, enum_desc, members_desc_list = enum_decl
-            yield from self._generate_enum(sig, enum_desc, members_desc_list)
 
 
     def _generate_constructors(self, sip_klass, dox_klass):
@@ -397,7 +392,7 @@ class SIPClassDirective(_AutoDirective):
         if sip_klass is None or sip_klass.class_key is None:
             return self._generate_error(f'No class {klass_name} in SIP spec')
 
-        dox_klass = self._find_dox_class(sip_klass, 'class_like')
+        dox_klass = self._find_matching_dox_class(sip_klass, 'class_like')
 
         klass_lines = self._generate_class(sip_klass, dox_klass)
 
@@ -456,11 +451,8 @@ class SIPEnumDirective(_AutoDirective):
 
         enum_fq_cpp_name = sip_enum.fq_cpp_name.cpp_stripped(-1)
         dox_enum = dox_struct.get_dox_enum(self.env.domains['sip'], enum_fq_cpp_name)
-
-        decl = combiner.combine_enum_declaration(sip_enum, dox_enum)
-        sig, enum_desc, members_desc_list = decl
-
-        enum_lines = list(self._generate_enum(sig, enum_desc, members_desc_list))
+        decl = combiner.combine_enum(sip_enum, dox_enum)
+        enum_lines = list(self._generate_enum(decl))
 
         _add_lines_to_result(self.content.data, enum_lines, "   ")
 
