@@ -4,6 +4,7 @@
 
 
 import os
+import weakref
 from xml.dom.minidom import Element, parse as xml_parse
 from sphinx.domains import Domain
 
@@ -64,12 +65,20 @@ def _get_dox_index(domain):
     root = DoxElement(dox_index.documentElement)
     return root
 
+#Cache for the XML file already loaded
+_dox_file_cache = weakref.WeakValueDictionary()
+
 
 def _load_dox_compound(domain, fn):
-    dox_dir = domain.env.app.config.sip_doxygen_project
-    dox_dir = os.path.abspath(dox_dir)
-    fp = os.path.join(dox_dir, fn + '.xml')
-    xmldoc = xml_parse(fp)
+    if fn in _dox_file_cache:
+        xmldoc = _dox_file_cache[fn]
+    else:
+        dox_dir = domain.env.app.config.sip_doxygen_project
+        dox_dir = os.path.abspath(dox_dir)
+        fp = os.path.join(dox_dir, fn + '.xml')
+        xmldoc = xml_parse(fp)
+        _dox_file_cache[fn] = xmldoc
+
     root_element = DoxElement(xmldoc.documentElement)
     return root_element.find_child('compounddef')
 
