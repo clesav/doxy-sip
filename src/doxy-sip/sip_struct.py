@@ -25,9 +25,16 @@ class SIP_Constructor:
 
         self.cpp_arg_signature = signature_as_cpp_declaration(spec, ctor.cpp_signature)
         self.py_signature = ctor.py_signature
-        self.docstring = ctor.docstring.text if ctor.docstring is not None else None
+        self.docstring = ctor.docstring
         self.has_method_code = ctor.method_code is not None
-        self.is_default = klass.default_ctor is ctor
+
+        if len(self.py_signature.args) == 0:
+            self.is_default = True
+        elif len(self.py_signature.args) == 1:
+            arg = self.py_signature.args[0]
+            self.is_default = arg.is_const and arg.is_reference and arg.definition is klass
+        else:
+            self.is_default = False
 
 
     def py_declaration(self):

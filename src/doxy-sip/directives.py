@@ -148,19 +148,29 @@ class SIPModuleDirective(_SIPDirective):
         return nodes
 
 
+_CLASS_MEMBER_FILTERS = frozenset(('all', 'undoc', 'special', 'private'))
+
+def _split_member_filters(filt_opt, filt_list):
+    if not filt_opt: return set()
+    filt_arg = set(v.strip() for v in filt_opt.split(','))
+    if not filt_arg.issubset(filt_list):
+        raise ValueError('Member filters "%s" invalid' % ','.join(filt_arg.difference(filt_list)))
+    return filt_arg
+
 class _AutoDirectiveOptions:
 
     OPTION_SPEC = {
         'members': directives.flag,
-        'undoc-members': directives.flag,
-        'undoc-slots': directives.flag,
+        'filters': directives.unchanged,
     }
 
-    def __init__(self, options):
-        self.do_members = 'members' in options
-        self.do_undoc_members = self.do_members and 'undoc-members' in options
-        self.do_undoc_slots = self.do_undoc_members and 'undoc-slots' in options
-
+    def __init__(self, options, filter_list):
+        self.gen_members = 'members' in options
+        filters = _split_member_filters(options.get('filters', ''), filter_list)
+        gen_all = 'all' in filters
+        self.gen_undoc = self.gen_members and (gen_all or 'undoc' in filters)
+        self.gen_special = self.gen_members and (gen_all or 'special' in filters)
+        self.gen_private = self.gen_members and (gen_all or 'private' in filters)
 
 
 class _AutoDirective(_SIPDirective):
@@ -168,6 +178,8 @@ class _AutoDirective(_SIPDirective):
     has_content = True
 
     option_spec = _AutoDirectiveOptions.OPTION_SPEC
+
+    sip_member_filters = ()
 
     def run(self):
         source, lineno = self.get_source_info()
@@ -177,13 +189,17 @@ class _AutoDirective(_SIPDirective):
         if err_nodes := self._get_loaded_spec():
             return err_nodes
 
-        self.sip_options = _AutoDirectiveOptions(self.options)
+        self.sip_options = _AutoDirectiveOptions(self.options, self.sip_member_filters)
 
         return self.run_sip_directive()
 
 
     def _run_sip_directive(self):
         raise NotImplementedError
+
+
+    def _filter_sub_type(self, py_name):
+        return self.sip_options.do_priv_members or py_name is None or not py_name.name.startswith('_')
 
 
     def _generate_class(self, sip_klass, dox_klass):
@@ -196,12 +212,19 @@ class _AutoDirective(_SIPDirective):
             _add_lines_to_result(klass_description, klass_lines, "   ")
             klass_lines.append("")
 
-        if not self.sip_options.do_members:
+        if not self.sip_options.gen_members:
             return klass_lines
 
-        #Add the sub-classes
-        sub_classes = [ c for c in self.sip_spec.classes if c.scope == sip_klass ]
-        sub_enums = [ e for e in self.sip_spec.enums if e.scope == sip_klass ]
+        #Add the sub-types
+        sub_type_filter = lambda py_name: self.sip_options.gen_private or \
+                                          py_name is None or \
+                                          not py_name.name.startswith('_')
+
+        sub_classes = [ c for c in self.sip_spec.classes
+                        if c.scope == sip_klass and sub_type_filter(c.py_name) ]
+        sub_enums = [ e for e in self.sip_spec.enums
+                      if e.scope == sip_klass and sub_type_filter(e.py_name) ]
+
         if sub_classes or sub_enums:
             klass_lines.append("   **Sub-types**:")
             klass_lines.append("")
@@ -274,29 +297,34 @@ class _AutoDirective(_SIPDirective):
     def _generate_constructors(self, sip_klass, dox_klass):
         ctor_decl_list = combiner.combine_constructors(self.sip_spec, sip_klass, dox_klass)
 
-        if ctor_decl_list:
-            yield "**Constructors**:"
-            yield ""
+        all_defaults = all(c.default for c in ctor_decl_list)
 
-        for ctor_desc in ctor_decl_list:
+        first = True
+        for ctor_decl in ctor_decl_list:
 
-            if not ctor_desc.ctor_default and not self.sip_options.do_undoc_members:
+            has_description = ctor_decl.description or any(a[1] for a in ctor_decl.arguments)
+
+            if all_defaults and not has_description and not self.sip_options.gen_undoc:
                 continue
 
-            yield "   .. py:method:: " + ctor_desc.signature
+            if first:
+                first = False
+                yield "**Constructors**:"
+                yield ""
+
+            yield "   .. py:method:: " + ctor_decl.signature
             yield ""
 
-            if ctor_desc.description:
-                yield from _yield_indented_lines(ctor_desc.description, "      ")
+            if ctor_decl.description:
+                yield from _yield_indented_lines(ctor_decl.description, "      ")
                 yield ""
 
-            if ctor_desc.arguments is not None:
-                for arg_name, arg_desc in ctor_desc.arguments:
-                    param_line = f"      :param {arg_name}:"
-                    if arg_desc:
-                        param_line += f" {arg_desc}"
-                    yield param_line
-                yield ""
+            for arg_name, arg_desc in ctor_decl.arguments:
+                param_line = f"      :param {arg_name}:"
+                if arg_desc:
+                    param_line += f" {arg_desc}"
+                yield param_line
+            yield ""
 
 
     def _generate_methods(self, sip_klass, dox_klass):
@@ -304,15 +332,19 @@ class _AutoDirective(_SIPDirective):
         for sip_member in reversed(sip_klass.members):
             member = sip_struct.SIP_Callable(self.sip_spec, sip_klass, sip_member)
 
-            overload_declarations = []
             for overload in member.overloads:
-                fct_decl = combiner.combine_overload_declaration(self.sip_spec, overload, dox_klass)
+                fct_decl = combiner.combine_overload(self.sip_spec, overload, dox_klass)
 
-                if not fct_decl.description and not self.sip_options.do_undoc_members:
-                    continue
+                has_description = fct_decl.description or any(a[1] for a in fct_decl.arguments)
 
-                if overload.py_slot and not fct_decl.description and not self.sip_options.do_undoc_slots:
-                    continue
+                if overload.py_name.startswith('__') and overload.py_name.endswith('__'):
+                    do_generate = self.sip_options.gen_special and \
+                                  (has_description or self.sip_options.gen_undoc)
+                else:
+                    do_generate = (self.sip_options.gen_private or not overload.py_name.startswith('_')) and \
+                                  (has_description or self.sip_options.gen_undoc)
+
+                if not do_generate: continue
 
                 if first:
                     first = False
@@ -338,13 +370,12 @@ class _AutoDirective(_SIPDirective):
                     yield from _yield_indented_lines(fct_decl.description, "      ")
                     yield ""
 
-                if fct_decl.arguments is not None:
-                    for arg_name, arg_desc in fct_decl.arguments:
-                        param_line = f"      :param {arg_name}:"
-                        if arg_desc is not None:
-                            param_line += " " + arg_desc
-                        if arg_desc or not overload.py_slot:
-                            yield param_line
+                for arg_name, arg_desc in fct_decl.arguments:
+                    param_line = f"      :param {arg_name}:"
+                    if arg_desc is not None:
+                        param_line += " " + arg_desc
+                    if arg_desc or not overload.py_slot:
+                        yield param_line
 
                 if fct_decl.result:
                     yield "      :return: " + fct_decl.result
@@ -374,12 +405,19 @@ class _AutoDirective(_SIPDirective):
     def _generate_class_attributes(self, sip_klass, dox_klass):
         klass_vars_decl = combiner.combine_class_variable_declaration(self.sip_spec, sip_klass, dox_klass)
 
-        if klass_vars_decl:
-            yield "**Attributes**:"
-            yield ""
-
         indent = " " * 3
+        first = True
         for v_name, v_type, v_desc in klass_vars_decl:
+
+            if (v_name.startswith('_') and not self.sip_options.gen_private) or \
+               (not v_desc and not self.sip_options.gen_undoc):
+                continue
+
+            if first:
+                first = False
+                yield "**Attributes**:"
+                yield ""
+
             yield indent + ".. py:attribute:: " + v_name
             yield indent * 2 + ":type: " + v_type
             yield ""
@@ -393,6 +431,7 @@ class SIPClassDirective(_AutoDirective):
     '''
 
     required_arguments = 1
+    sip_member_filters = _CLASS_MEMBER_FILTERS
 
     def run_sip_directive(self):
 

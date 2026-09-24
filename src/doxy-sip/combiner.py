@@ -155,13 +155,13 @@ def merge_description(sip_docstring, dox_node):
 
 
 @dataclasses.dataclass
-class FunctionDescription:
+class FunctionDeclaration:
 
     signature: str = ''
     description: str|None = None
-    arguments : list[tuple[str, str|None]]|None = None
+    arguments : list[tuple[str, str|None]] = field(default_factory=list)
     result: str|None = None
-    ctor_default: bool = False
+    default: bool = False #for constructors only
 
 
 def _combine_arguments(sip_signature, dox_member, discard_no_desc):
@@ -230,18 +230,18 @@ def combine_constructors(sip_spec, sip_klass, dox_klass):
 
         ctor = sip_struct.SIP_Constructor(sip_spec, sip_klass, sip_ctor)
 
-        ctor_desc = FunctionDescription()
+        ctor_decl = FunctionDeclaration()
 
         #Find the corresponding member node
         dox_ctor = _find_dox_member_by_kind(dox_klass, 'function', lambda m: ctor_match(ctor, m))
 
         #Description for the overload
         tag, merged_description = merge_description(ctor.docstring, dox_ctor)
-        ctor_desc.description = merged_description
+        ctor_decl.description = merged_description
 
         #Try to fill in the missing argument name and description using Doxygen
         #Skip it if there is a docstring with a 'discard' tag
-        ctor_desc.arguments = _combine_arguments(ctor.py_signature,
+        ctor_decl.arguments = _combine_arguments(ctor.py_signature,
                                                  dox_ctor if tag != 'discard' else None,
                                                  ctor.docstring is not None)
 
@@ -249,14 +249,14 @@ def combine_constructors(sip_spec, sip_klass, dox_klass):
                                                         ctor.py_signature,
                                                         need_self=False,
                                                         defined=None)
-        ctor_desc.signature = f'{klass_name}{arg_sig}'
-        ctor_desc.ctor_default = ctor.is_default
-        ctor_decl_list.append(ctor_desc)
+        ctor_decl.signature = f'{klass_name}{arg_sig}'
+        ctor_decl.default = ctor.is_default
+        ctor_decl_list.append(ctor_decl)
 
     return ctor_decl_list
 
 
-def combine_overload_declaration(sip_spec, overload, dox_klass):
+def combine_overload(sip_spec, overload, dox_klass):
 
     if overload.py_slot:
         sip_cpp_name = _py_slot_to_cpp_name(overload.py_name)
@@ -288,33 +288,33 @@ def combine_overload_declaration(sip_spec, overload, dox_klass):
     #Find the corresponding member node
     dox_member = _find_dox_member_by_kind(dox_klass, 'function', overload_match)
 
-    fct_desc = FunctionDescription()
+    fct_decl = FunctionDeclaration()
 
     #Description for the overload
     tag, overload_description = merge_description(overload.docstring, dox_member)
-    fct_desc.description = overload_description
+    fct_decl.description = overload_description
 
     #Find the argument and result descriptions. Skip if the tag is 'discard'
     if tag != 'discard':
-        fct_desc.arguments = _combine_arguments(overload.py_signature,
+        fct_decl.arguments = _combine_arguments(overload.py_signature,
                                                 dox_member,
                                                 overload.docstring is not None)
         if dox_member is not None:
             #Find the description of the return value
             for n in dox_member.getElementsByTagName('simplesect'):
                 if n.attr('kind') != 'return': continue
-                fct_desc.result = dox_struct.extract_single_line_description(n)
+                fct_decl.result = dox_struct.extract_single_line_description(n)
                 break
     else:
-        fct_desc.arguments = _combine_arguments(overload.py_signature, None, True)
+        fct_decl.arguments = _combine_arguments(overload.py_signature, None, True)
 
     arg_sig = sip_struct.fmt_signature_as_type_hint(sip_spec,
                                                     overload.py_signature,
                                                     need_self=False,
                                                     defined=None)
-    fct_desc.signature = f'{overload.py_name}{arg_sig}'
+    fct_decl.signature = f'{overload.py_name}{arg_sig}'
 
-    return fct_desc
+    return fct_decl
 
 
 #==============================================================================
