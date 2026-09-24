@@ -52,23 +52,34 @@ def _parse_generated_content(state, lines):
         return nested_parse_to_nodes(state, content)
 
 
-class SIPCurrentModuleDirective(SphinxDirective):
+class SIPSpecificationDirective(SphinxDirective):
 
     has_content = True
     required_arguments = 1
 
     def run(self):
-        sip_spec = sip_struct.get_sip_spec(self.env.domains['sip'], self.arguments[0])
-        self.env.domaindata['sip']['sip_current_spec'] = sip_spec
+        mod_name = self.arguments[0]
+        sip_data = self.env.domaindata['sip']
+        sip_project_dir = self.env.app.config.sip_toml_project
+        try:
+            sip_spec = sip_struct.get_sip_spec(sip_data, sip_project_dir, mod_name)
+            self.env.domaindata['sip']['sip_current_spec'] = sip_spec
 
-        mod_lines = [
-            '.. py:currentmodule:: ' + sip_spec.module.fq_py_name.name,
-            ''
-        ]
+            mod_lines = [
+                '.. py:currentmodule:: ' + sip_spec.module.fq_py_name.name,
+                ''
+            ]
 
-        nodes = _parse_generated_content(self.state, mod_lines)
+            return _parse_generated_content(self.state, mod_lines)
 
-        return nodes
+        except sip_struct.UserException as e:
+            text = '\n  '.join(e.text.split('\n'))
+            msg = f'SIP errors while parsing spec file for module "{mod_name}":\n  {text}'
+            raise self.error(msg) from None
+
+        except Exception as e:
+            msg = f'Error while reading spec file for module "{mod_name}"'
+            raise self.error(msg) from e
 
 
 class _SIPDirective(SphinxDirective):

@@ -6,7 +6,7 @@
 from sphinx.domains import Domain
 
 from .directives import (
-    SIPCurrentModuleDirective,
+    SIPSpecificationDirective,
     SIPModuleDirective,
     SIPClassDirective,
     SIPNamespaceDirective,
@@ -23,7 +23,7 @@ class SIPDomain(Domain):
     name = 'sip'
     label = 'Bindings specification language'
     directives = {
-        'currentmodule': SIPCurrentModuleDirective,
+        'specification': SIPSpecificationDirective,
         'module' : SIPModuleDirective,
         'class': SIPClassDirective,
         'namespace': SIPNamespaceDirective,

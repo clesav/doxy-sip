@@ -15,6 +15,7 @@ from sipbuild.generator.scoped_name import STRIP_NONE, STRIP_GLOBAL
 from sipbuild import AbstractProject
 from sipbuild.version import SIP_VERSION
 from sipbuild.generator import parse, resolve
+from sipbuild.exceptions import UserException
 
 
 class SIP_Constructor:
@@ -357,13 +358,12 @@ def signature_as_result_type_hint(spec, py_signature):
         return 'None'
 
 
-def get_sip_spec(domain, sip_module_name):
-    specs = domain.data['sip_specs']
+def get_sip_spec(data, sip_project_dir, sip_module_name):
+    specs = data['sip_specs']
 
-    if not domain.data['sip_project_loaded']:
-        domain.data['sip_project_loaded'] = True
+    if not data['sip_project_loaded']:
+        data['sip_project_loaded'] = True
 
-        sip_project_dir = domain.env.app.config.sip_toml_project
         sip_project_dir = os.path.abspath(sip_project_dir)
 
         oldcwd = os.getcwd()
@@ -403,7 +403,7 @@ def get_sip_spec(domain, sip_module_name):
     #Check if the specification is already loaded, it should be in the cache
     spec = specs.get(sip_module_name, None)
     if spec is None:
-        raise ValueError('module name ' + sip_module_name + ' is unkown')
+        raise ValueError(f'module name "{sip_module_name}" is unknown')
 
     return spec
 
