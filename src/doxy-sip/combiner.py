@@ -157,11 +157,18 @@ def merge_description(sip_docstring, dox_node):
 @dataclasses.dataclass
 class FunctionDeclaration:
 
+    name: str|None = None #not for constructors
     signature: str = ''
     description: str|None = None
-    arguments : list[tuple[str, str|None]] = field(default_factory=list)
+    arguments: list[tuple[str, str|None]] = dataclasses.field(default_factory=list)
     result: str|None = None
     default: bool = False #for constructors only
+
+    @property
+    def documented(self):
+        return self.description is not None or \
+               any(a[1] is not None for a in self.arguments) or \
+               self.result is not None
 
 
 def _combine_arguments(sip_signature, dox_member, discard_no_desc):
@@ -288,7 +295,7 @@ def combine_overload(sip_spec, overload, dox_klass):
     #Find the corresponding member node
     dox_member = _find_dox_member_by_kind(dox_klass, 'function', overload_match)
 
-    fct_decl = FunctionDeclaration()
+    fct_decl = FunctionDeclaration(name=overload.py_name)
 
     #Description for the overload
     tag, overload_description = merge_description(overload.docstring, dox_member)
@@ -368,11 +375,12 @@ def combine_class_enum(sip_enum, dox_klass):
 
 @dataclasses.dataclass
 class PropertyDeclaration:
-    name:str
-    type_: str|None
-    description : str|None
+    name: str
+    type: str|None
+    description: str|None
 
-def combine_property_declaration(sip_spec, sip_klass, sip_prop):
+
+def combine_property(sip_spec, sip_klass, sip_prop):
     getter_member = None
     for m in sip_klass.members:
         if m.py_name.name == sip_prop.getter:

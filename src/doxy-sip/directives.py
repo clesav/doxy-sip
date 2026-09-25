@@ -148,38 +148,66 @@ class SIPModuleDirective(_SIPDirective):
         return nodes
 
 
-_CLASS_MEMBER_FILTERS = frozenset(('all', 'undoc', 'special', 'private'))
+#==============================================================================
 
-def _split_member_filters(filt_opt, filt_list):
-    if not filt_opt: return set()
-    filt_arg = set(v.strip() for v in filt_opt.split(','))
-    if not filt_arg.issubset(filt_list):
-        raise ValueError('Member filters "%s" invalid' % ','.join(filt_arg.difference(filt_list)))
-    return filt_arg
+class _AutoGenOptions:
 
-class _AutoDirectiveOptions:
+    CLASSLIKE_MEMBER_FILTERS = frozenset(('all', 'undoc', 'special', 'private'))
 
     OPTION_SPEC = {
-        'members': directives.flag,
-        'filters': directives.unchanged,
+        'members': directives.unchanged,
     }
 
-    def __init__(self, options, filter_list):
+    def __init__(self, options, filt_spec):
         self.gen_members = 'members' in options
-        filters = _split_member_filters(options.get('filters', ''), filter_list)
-        gen_all = 'all' in filters
-        self.gen_undoc = self.gen_members and (gen_all or 'undoc' in filters)
-        self.gen_special = self.gen_members and (gen_all or 'special' in filters)
-        self.gen_private = self.gen_members and (gen_all or 'private' in filters)
 
+        filt_opt = options.get('members', '')
+        if filt_opt:
+            filt_set = frozenset(v.strip(' \n') for v in filt_opt.split(','))
+            if not filt_set.issubset(filt_spec):
+                raise ValueError('Member filters "%s" invalid' % ','.join(filt_arg.difference(filt_spec)))
+        else:
+            filt_set = frozenset()
+
+        gen_all = 'all' in filt_set
+        self._gen_undoc = self.gen_members and (gen_all or 'undoc' in filt_set)
+        self._gen_special = self.gen_members and (gen_all or 'special' in filt_set)
+        self._gen_private = self.gen_members and (gen_all or 'private' in filt_set)
+
+    def gen_sub_type(self, sub_type):
+        return self._gen_private or \
+               sub_type.py_name is None or \
+               not sub_type.py_name.name.startswith('_')
+
+    def gen_constructor(self, ctor_decl):
+        return self._gen_undoc or ctor_decl.documented
+
+    def gen_method(self, fct_decl):
+        if fct_decl.name.startswith('__') and fct_decl.name.endswith('__'):
+            return self._gen_special and \
+                   (self._gen_undoc or fct_decl.documented)
+        else:
+            return (self._gen_private or not fct_decl.name.startswith('_')) and \
+                   (self._gen_undoc or fct_decl.documented)
+
+    def gen_property(self, prop_decl):
+        return (self._gen_private or not prop_decl.name.startswith('_')) and \
+               (self._gen_undoc or prop_decl.description is not None)
+
+    def gen_attribute(self, v_name, v_desc):
+        return (self._gen_private or not v_name.startswith('_')) and \
+               (self._gen_undoc or v_desc is not None)
+
+
+#==============================================================================
 
 class _AutoDirective(_SIPDirective):
 
     has_content = True
 
-    option_spec = _AutoDirectiveOptions.OPTION_SPEC
+    option_spec = _AutoGenOptions.OPTION_SPEC
 
-    sip_member_filters = ()
+    sip_member_filters = frozenset()
 
     def run(self):
         source, lineno = self.get_source_info()
@@ -189,17 +217,13 @@ class _AutoDirective(_SIPDirective):
         if err_nodes := self._get_loaded_spec():
             return err_nodes
 
-        self.sip_options = _AutoDirectiveOptions(self.options, self.sip_member_filters)
+        self.sip_options = _AutoGenOptions(self.options, self.sip_member_filters)
 
         return self.run_sip_directive()
 
 
     def _run_sip_directive(self):
         raise NotImplementedError
-
-
-    def _filter_sub_type(self, py_name):
-        return self.sip_options.do_priv_members or py_name is None or not py_name.name.startswith('_')
 
 
     def _generate_class(self, sip_klass, dox_klass):
@@ -216,14 +240,10 @@ class _AutoDirective(_SIPDirective):
             return klass_lines
 
         #Add the sub-types
-        sub_type_filter = lambda py_name: self.sip_options.gen_private or \
-                                          py_name is None or \
-                                          not py_name.name.startswith('_')
-
         sub_classes = [ c for c in self.sip_spec.classes
-                        if c.scope == sip_klass and sub_type_filter(c.py_name) ]
+                        if c.scope == sip_klass and self.sip_options.gen_sub_type(c) ]
         sub_enums = [ e for e in self.sip_spec.enums
-                      if e.scope == sip_klass and sub_type_filter(e.py_name) ]
+                      if e.scope == sip_klass and self.sip_options.gen_sub_type(e) ]
 
         if sub_classes or sub_enums:
             klass_lines.append("   **Sub-types**:")
@@ -302,9 +322,7 @@ class _AutoDirective(_SIPDirective):
         first = True
         for ctor_decl in ctor_decl_list:
 
-            has_description = ctor_decl.description or any(a[1] for a in ctor_decl.arguments)
-
-            if all_defaults and not has_description and not self.sip_options.gen_undoc:
+            if all_defaults and not self.sip_options.gen_constructor(ctor_decl):
                 continue
 
             if first:
@@ -335,16 +353,7 @@ class _AutoDirective(_SIPDirective):
             for overload in member.overloads:
                 fct_decl = combiner.combine_overload(self.sip_spec, overload, dox_klass)
 
-                has_description = fct_decl.description or any(a[1] for a in fct_decl.arguments)
-
-                if overload.py_name.startswith('__') and overload.py_name.endswith('__'):
-                    do_generate = self.sip_options.gen_special and \
-                                  (has_description or self.sip_options.gen_undoc)
-                else:
-                    do_generate = (self.sip_options.gen_private or not overload.py_name.startswith('_')) and \
-                                  (has_description or self.sip_options.gen_undoc)
-
-                if not do_generate: continue
+                if not self.sip_options.gen_method(fct_decl): continue
 
                 if first:
                     first = False
@@ -384,21 +393,27 @@ class _AutoDirective(_SIPDirective):
 
 
     def _generate_properties(self, sip_klass):
-        if len(sip_klass.properties):
-            yield "**Properties**:"
-            yield ""
-            for p in sip_klass.properties:
-                yield from self._generate_property(sip_klass, p)
+        first = True
+        for p in sip_klass.properties:
+            decl = combiner.combine_property(self.sip_spec, sip_klass, sip_prop)
+
+            if not self.sip_options.gen_property(prop_decl): continue
+
+            if first:
+                first = False
+                yield "**Properties**:"
+                yield ""
+
+            yield from self._generate_property(sip_klass, decl)
 
 
-    def _generate_property(self, sip_klass, sip_prop):
-        decl = combiner.combine_property_declaration(self.sip_spec, sip_klass, sip_prop)
-        yield f".. py:property:: {decl.name}"
-        if decl.type_:
-            yield f"   :type: {decl.type_}"
+    def _generate_property(self, sip_klass, prop_decl):
+        yield f".. py:property:: {prop_decl.name}"
+        if prop_decl.type:
+            yield f"   :type: {prop_decl.type}"
         yield ""
-        if decl.description:
-            yield from _yield_indented_lines(decl.description, "   ")
+        if prop_decl.description:
+            yield from _yield_indented_lines(prop_decl.description, "   ")
             yield ""
 
 
@@ -409,9 +424,7 @@ class _AutoDirective(_SIPDirective):
         first = True
         for v_name, v_type, v_desc in klass_vars_decl:
 
-            if (v_name.startswith('_') and not self.sip_options.gen_private) or \
-               (not v_desc and not self.sip_options.gen_undoc):
-                continue
+            if not self.sip_options.gen_attribute(v_name, v_desc): continue
 
             if first:
                 first = False
@@ -431,7 +444,7 @@ class SIPClassDirective(_AutoDirective):
     '''
 
     required_arguments = 1
-    sip_member_filters = _CLASS_MEMBER_FILTERS
+    sip_member_filters = _AutoGenOptions.CLASSLIKE_MEMBER_FILTERS
 
     def run_sip_directive(self):
 
@@ -448,9 +461,7 @@ class SIPClassDirective(_AutoDirective):
 
         _add_lines_to_result(self.content.data, klass_lines, "   ")
 
-        nodes = _parse_generated_content(self.state, klass_lines)
-
-        return nodes
+        return _parse_generated_content(self.state, klass_lines)
 
 
 class SIPNamespaceDirective(_AutoDirective):
@@ -461,6 +472,7 @@ class SIPNamespaceDirective(_AutoDirective):
     '''
 
     required_arguments = 1
+    sip_member_filters = _AutoGenOptions.CLASSLIKE_MEMBER_FILTERS
 
     def run_sip_directive(self):
 
