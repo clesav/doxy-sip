@@ -52,9 +52,19 @@ class DoxElement:
         return getattr(self._element, attr)
 
 
+def _get_dox_dir(domain):
+    dox_dir_conf = domain.env.app.config.sip_doxygen_project
+    dox_dir = os.path.join(domain.env.app.confdir, dox_dir_conf)
+    dox_dir = os.path.normpath(dox_dir)
+    return dox_dir
+
+
+#Cache for the XML file already loaded
+_dox_file_cache = weakref.WeakValueDictionary()
+
+
 def _get_dox_index(domain):
-    dox_dir = domain.env.app.config.sip_doxygen_project
-    dox_dir = os.path.abspath(dox_dir)
+    dox_dir = _get_dox_dir(domain)
 
     dox_index = domain.data['sip_dox_index']
     if dox_index is None:
@@ -65,16 +75,12 @@ def _get_dox_index(domain):
     root = DoxElement(dox_index.documentElement)
     return root
 
-#Cache for the XML file already loaded
-_dox_file_cache = weakref.WeakValueDictionary()
-
 
 def _load_dox_compound(domain, fn):
     if fn in _dox_file_cache:
         xmldoc = _dox_file_cache[fn]
     else:
-        dox_dir = domain.env.app.config.sip_doxygen_project
-        dox_dir = os.path.abspath(dox_dir)
+        dox_dir = _get_dox_dir(domain)
         fp = os.path.join(dox_dir, fn + '.xml')
         xmldoc = xml_parse(fp)
         _dox_file_cache[fn] = xmldoc
@@ -84,8 +90,8 @@ def _load_dox_compound(domain, fn):
 
 
 def get_dox_class(domain, name, kinds):
-    root = _get_dox_index(domain)
-    for node in root.find_children('compound'):
+    dox_index = _get_dox_index(domain)
+    for node in dox_index.find_children('compound'):
         if kinds and node.attr('kind') not in kinds: continue
 
         class_name_node = node.find_child('name')
