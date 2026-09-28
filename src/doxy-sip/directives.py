@@ -3,6 +3,7 @@
 # Copyright (c) 2026 C. Savergne <csavergne@yahoo.com>
 
 
+import os
 from sphinx.directives import SphinxDirective, ObjectDescription
 from sphinx.util.docutils import switch_source_input
 from sphinx.util.parsing import nested_parse_to_nodes
@@ -61,8 +62,10 @@ class SIPSpecificationDirective(SphinxDirective):
         mod_name = self.arguments[0]
         sip_data = self.env.domaindata['sip']
         sip_project_dir = self.env.app.config.sip_toml_project
+        d = os.path.join(self.env.app.confdir, sip_project_dir)
+        d = os.path.normpath(d)
         try:
-            sip_spec = sip_struct.get_sip_spec(sip_data, sip_project_dir, mod_name)
+            sip_spec = sip_struct.get_sip_spec(sip_data, d, mod_name)
             self.env.domaindata['sip']['sip_current_spec'] = sip_spec
 
             mod_lines = [
