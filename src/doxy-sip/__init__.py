@@ -13,6 +13,7 @@ from .directives import (
     SIPEnumDirective,
     SIPMethodDirective,
     SIPPropertyDirective,
+    SIPVariableDirective,
 )
 
 
@@ -30,6 +31,7 @@ class SIPDomain(Domain):
         'enum': SIPEnumDirective,
         'method': SIPMethodDirective,
         'property': SIPPropertyDirective,
+        'variable': SIPVariableDirective,
     }
     initial_data = {
         'sip_specs': {},

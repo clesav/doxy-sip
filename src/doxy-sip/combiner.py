@@ -403,25 +403,54 @@ def combine_property(sip_spec, sip_klass, sip_prop):
 
 #==============================================================================
 
+@dataclasses.dataclass
+class VariableDeclaration:
+    name: str
+    type_: str
+    const: bool
+    qualifiers : list[str]
+    description : str|None
 
-def combine_class_variable_declaration(sip_spec, sip_klass, dox_klass):
-    klass_vars = [ v for v in sip_spec.variables
-                   if v.module is sip_spec.module and v.scope is sip_klass ]
 
-    klass_decl_list = []
-    for v in klass_vars:
-        var_py_name = v.py_name.name
-        var_cpp_name = v.fq_cpp_name.base_name
-        dox_var = _find_dox_member_by_kind(dox_klass, 'variable', lambda m: m.child_text('name') == var_cpp_name)
+def combine_variable(sip_spec, sip_var, dox_var):
+    var_type = sip_struct.fmt_argument_as_type_hint(sip_spec, sip_var.type, None, None)
 
-        var_type = sip_struct.fmt_argument_as_type_hint(sip_spec, v.type, None, None)
+    if dox_var is not None:
+        description = dox_struct.extract_description(dox_var)
+    else:
+        description = None
 
-        if dox_var is not None:
-            description = dox_struct.extract_description(dox_var)
-        else:
-            description = None
+    has_const_type = sip_var.type.is_const and len(sip_var.type.derefs) == 0
+    is_const = has_const_type and sip_var.is_static
+    qualifiers = []
+    if sip_var.no_setter or has_const_type:
+        qualifiers.append('readonly')
+    if sip_var.is_static:
+        qualifiers.append('static')
 
-        klass_decl_list.append((var_py_name, var_type, description))
+    var_decl = VariableDeclaration(sip_var.py_name.name,
+                                   var_type, 
+                                   is_const,
+                                   qualifiers,
+                                   description)
 
-    return klass_decl_list
+    return var_decl
+
+
+def combine_class_variable(sip_spec, sip_var, dox_klass):
+    var_cpp_name = sip_var.fq_cpp_name.base_name
+    dox_var = _find_dox_member_by_kind(dox_klass, 'variable', lambda m: m.child_text('name') == var_cpp_name)
+    return combine_variable(sip_spec, sip_var, dox_var)
+
+
+def combine_class_variables(sip_spec, sip_klass, dox_klass):
+    var_decl_list = []
+    for v in sip_spec.variables:
+        if v.module is not sip_spec.module: continue
+        if v.scope is not sip_klass: continue
+
+        var_decl = combine_class_variable(sip_spec, v, dox_klass)
+        var_decl_list.append(var_decl)
+
+    return var_decl_list
 
