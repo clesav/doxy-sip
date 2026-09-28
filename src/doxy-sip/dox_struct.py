@@ -98,7 +98,7 @@ def get_dox_class(domain, name, kinds):
     return None
 
 
-def get_dox_enum(domain, name):
+def _find_global_member(domain, name, kind):
     dox_index = _get_dox_index(domain)
 
     if '::' in name:
@@ -108,7 +108,7 @@ def get_dox_enum(domain, name):
 
     for index_cpd_node in dox_index.find_children('compound'):
         for index_member_node in index_cpd_node.find_children('member'):
-            if index_member_node.attr('kind') != 'enum': continue
+            if index_member_node.attr('kind') != kind: continue
             if index_member_node.child_text('name') != basename: continue
             if namespace is None:
                 #Global enums belong to a 'file' compound
@@ -117,12 +117,19 @@ def get_dox_enum(domain, name):
                 if index_cpd_node.child_text('name') != namespace: continue
 
             cpd_refid = index_cpd_node.attr('refid')
-            cpd_root = _load_dox_compound(domain, cpd_refid)
+            cpd_root = _load_dox_compound(domain, dox_index, cpd_refid)
             for n in cpd_root.getElementsByTagName('memberdef'):
-                if n.attr('kind') == 'enum' and n.child_text('name') == basename:
+                if n.attr('kind') == kind and n.child_text('name') == basename:
                     return n
 
     return None
+
+
+def get_dox_enum(domain, name):
+    return _find_global_member(domain, name, 'enum')
+
+def get_dox_variable(domain, name):
+    return _find_global_member(domain, name, 'variable')
 
 
 #Mapping doxygen admonition -> sphinx admonition

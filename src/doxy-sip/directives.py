@@ -3,14 +3,14 @@
 # Copyright (c) 2026 C. Savergne <csavergne@yahoo.com>
 
 
-from sphinx.directives import SphinxDirective
+from sphinx.directives import SphinxDirective, ObjectDescription
 from sphinx.util.docutils import switch_source_input
 from sphinx.util.parsing import nested_parse_to_nodes
 from docutils.statemachine import StringList
 from docutils.parsers.rst import directives
 from sphinx.util import logging
 from sphinx import addnodes
-from sphinx.domains.python import PyObject
+from sphinx.domains.python import PyObject, PyVariable
 from . import sip_struct
 from . import dox_struct
 from . import combiner
@@ -82,9 +82,7 @@ class SIPSpecificationDirective(SphinxDirective):
             raise self.error(msg) from e
 
 
-class _SIPDirective(SphinxDirective):
-
-    has_content = True
+class _SIPDirectiveMixin:
 
     def _generate_error(self, message):
         lines = [
@@ -117,6 +115,11 @@ class _SIPDirective(SphinxDirective):
         klass_fq_cpp_name = sip_klass.iface_file.fq_cpp_name.cpp_stripped(-1)
         dox_klass = dox_struct.get_dox_class(self.env.domains['sip'], klass_fq_cpp_name, kinds)
         return dox_klass
+
+
+class _SIPDirective(SphinxDirective, _SIPDirectiveMixin):
+
+    has_content = True
 
 
 class SIPModuleDirective(_SIPDirective):
@@ -194,9 +197,9 @@ class _AutoGenOptions:
         return (self._gen_private or not prop_decl.name.startswith('_')) and \
                (self._gen_undoc or prop_decl.description is not None)
 
-    def gen_attribute(self, v_name, v_desc):
-        return (self._gen_private or not v_name.startswith('_')) and \
-               (self._gen_undoc or v_desc is not None)
+    def gen_attribute(self, var_decl):
+        return (self._gen_private or not var_decl.name.startswith('_')) and \
+               (self._gen_undoc or var_decl.description is not None)
 
 
 #==============================================================================
@@ -418,25 +421,41 @@ class _AutoDirective(_SIPDirective):
 
 
     def _generate_class_attributes(self, sip_klass, dox_klass):
-        klass_vars_decl = combiner.combine_class_variable_declaration(self.sip_spec, sip_klass, dox_klass)
+        klass_vars_decl = combiner.combine_class_variables(self.sip_spec, sip_klass, dox_klass)
 
         indent = " " * 3
+        dindent = indent * 2
+
+        def yield_var(v):
+            yield indent + ".. sip:variable:: " + var_decl.name
+            yield dindent + ":_autogen:"
+            yield dindent + ":_type: " + var_decl.type_
+            if not v.const and v.qualifiers:
+                yield dindent + ":_qualifiers: " + ','.join(v.qualifiers)
+            yield ""
+            if var_decl.description:
+                yield from _yield_indented_lines(var_decl.description, dindent)
+                yield ""
+
         first = True
-        for v_name, v_type, v_desc in klass_vars_decl:
-
-            if not self.sip_options.gen_attribute(v_name, v_desc): continue
-
+        for var_decl in filter((lambda v: v.const and self.sip_options.gen_attribute(v)), klass_vars_decl):
             if first:
                 first = False
-                yield "**Attributes**:"
+                yield "**Constants**:"
+                yield ""
+ 
+            yield from yield_var(var_decl)
+            yield ""
+
+        first = True
+        for var_decl in filter((lambda v: not v.const and self.sip_options.gen_attribute(v)), klass_vars_decl):
+            if first:
+                first = False
+                yield "**Variables**:"
                 yield ""
 
-            yield indent + ".. py:attribute:: " + v_name
-            yield indent * 2 + ":type: " + v_type
+            yield from yield_var(var_decl)
             yield ""
-            if v_desc:
-                yield from _yield_indented_lines(v_desc, indent * 2)
-                yield ""
 
 
 class SIPClassDirective(_AutoDirective):
@@ -588,3 +607,68 @@ class SIPMethodDirective(SphinxDirective):
         node_desc_sig.insert(0, addnodes.desc_annotation(text=qual_text))
 
         return nodes
+
+
+class SIPVariableDirective(PyVariable, _SIPDirectiveMixin):
+
+    option_spec = ObjectDescription.option_spec.copy()
+    option_spec.update({
+        'value': directives.unchanged,
+        '_autogen': directives.flag,
+        '_type' : directives.unchanged,
+        '_const': directives.flag,
+        '_qualifiers': lambda x: [ v.strip() for v in x.split(',') ],
+    })
+
+    def get_signature_prefix(self, sig):
+        if '_const' in self.options:
+            qualifiers = ('const',)
+        else:
+            qualifiers = self.options.get('_qualifiers', ())
+
+        if qualifiers:
+            qual_text = '[' + ', '.join(qualifiers) + ']'
+            return [ addnodes.desc_sig_keyword(text=qual_text), addnodes.desc_sig_space() ]
+        else:
+            return []
+
+    def run(self):
+        if '_autogen' not in self.options:
+            #This is a manual directive
+
+            #Get the currently loaded SIP specification
+            if err_nodes := self._get_loaded_spec():
+                return err_nodes
+
+            #Find the variable
+            var_name = self.arguments[0]
+            sip_var = sip_struct.find_sip_variable(self.sip_spec, var_name)
+            if not sip_var:
+                return self._generate_error("Unknown variable name: " + var_name)
+
+            if sip_var.scope is None:
+                #Global variable
+                var_base_cpp_name = sip_var.fq_cpp_name.base_name
+                dox_var = dox_struct.get_dox_variable(self.env.domains['sip'], var_base_cpp_name)
+                var_decl = combiner.combine_variable(self.sip_spec, sip_var, dox_var)
+            else:
+                #Class/namespace variable
+                dox_klass = self._find_matching_dox_class(sip_var.scope, 'any')
+                var_decl = combiner.combine_class_variable(self.sip_spec, sip_var, dox_klass)
+
+            self.content = StringList(var_decl.description) + self.content
+
+            self.options['type'] = var_decl.type_
+            if var_decl.const:
+                self.options['_const'] = None
+            elif '_const' in self.options:
+                del self.options['_const']
+            self.options['_qualifiers'] = var_decl.qualifiers
+
+        else:
+
+            if '_type' in self.options:
+                self.options['type'] = self.options['_type']
+
+        return super().run()
+

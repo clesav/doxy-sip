@@ -437,6 +437,17 @@ def find_sip_property(spec, name):
     return None, None
 
 
+def find_sip_variable(spec, name):
+    for v in spec.variables:
+        if v.scope is None:
+            if v.py_name.name == name:
+                return v
+        else:
+            if get_scoped_py_name(v.scope) + '.' + v.py_name.name == name:
+                return v
+    return None
+
+
 def render_docstring(docstring):
     if docstring is None:
         return []
