@@ -368,10 +368,9 @@ class _AutoDirective(_SIPDirective):
 
                 yield "   .. sip:method:: " + fct_decl.signature
 
-                if overload.is_static:
-                    yield "      :staticmethod:"
-
                 qualifiers = []
+                if overload.is_static:
+                    qualifiers.append('static')
                 if overload.is_virtual:
                     qualifiers.append('virtual')
                 if overload.is_abstract:
@@ -508,6 +507,8 @@ class SIPNamespaceDirective(_AutoDirective):
 
         lines = self._generate_class(sip_NS, dox_NS)
 
+        _add_lines_to_result(self.content.data, lines, "   ")
+
         nodes = _parse_generated_content(self.state, lines)
 
         node_desc_sig = nodes[1][0]
@@ -585,7 +586,7 @@ class SIPMethodDirective(SphinxDirective):
     has_content = True
 
     #Inherit all the options from PyObject, and add :qualifiers:
-    option_spec = PyObject.option_spec
+    option_spec = PyObject.option_spec.copy()
     option_spec.update({
         'qualifiers': _qualifier_converter,
     })
@@ -616,7 +617,6 @@ class SIPVariableDirective(PyVariable, _SIPDirectiveMixin):
 
     option_spec = ObjectDescription.option_spec.copy()
     option_spec.update({
-        'value': directives.unchanged,
         '_autogen': directives.flag,
         '_type' : directives.unchanged,
         '_const': directives.flag,

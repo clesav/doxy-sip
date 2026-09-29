@@ -23,7 +23,7 @@ class SIP_Constructor:
     def __init__(self, spec, klass, ctor):
         self._spec = spec
 
-        self.cpp_arg_signature = signature_as_cpp_declaration(spec, ctor.cpp_signature)
+        self.cpp_arg_signature = get_fct_arg_signature(spec, ctor.cpp_signature)
         self.py_signature = ctor.py_signature
         self.docstring = ctor.docstring
         self.has_method_code = ctor.method_code is not None
@@ -61,8 +61,8 @@ class SIP_Overload:
         self.is_virtual = ovr.is_virtual
         self.is_abstract = ovr.is_abstract
         self.py_slot = ovr.common.py_slot
-        self.result_type = argument_as_cpp_type(spec, ovr.cpp_signature.result)
-        self.cpp_arg_signature = signature_as_cpp_declaration(spec, ovr.cpp_signature)
+        self.result_signature = get_type_signature(spec, ovr.cpp_signature.result)
+        self.cpp_arg_signature = get_fct_arg_signature(spec, ovr.cpp_signature)
         self.py_signature = ovr.py_signature
         self.docstring = ovr.docstring
         self.has_method_code = ovr.method_code is not None
@@ -147,19 +147,17 @@ class SIP_Callable:
 
 
 #Copied from sipbuild, because doxygen uses 'unsigned int' and not uint
-def _fmt_argument_as_cpp_type(spec, arg, scope=None,
-        strip=STRIP_NONE, make_public=False, use_typename=True, plain=False,
-        no_derefs=False, as_xml=False):
-    """ Return an argument as a C++ type. """
+def _fmt_argument_as_cpp_type(spec, arg, scope=None):
 
+    strip = STRIP_GLOBAL
     original_typedef = arg.original_typedef
-    nr_derefs = 0 if no_derefs else len(arg.derefs)
-    is_const = arg.is_const and not plain
-    is_reference = arg.is_reference and not plain
+    nr_derefs = len(arg.derefs)
+    is_const = arg.is_const
+    is_reference = arg.is_reference
 
     s = ''
 
-    if use_typename and original_typedef is not None and not original_typedef.no_type_name and arg.array is not ArrayArgument.ARRAY_SIZE:
+    if original_typedef is not None and not original_typedef.no_type_name and arg.array is not ArrayArgument.ARRAY_SIZE:
         # Reverse the previous expansion of the typedef.
         if is_const and not original_typedef.type.is_const:
             s += 'const '
@@ -175,8 +173,7 @@ def _fmt_argument_as_cpp_type(spec, arg, scope=None,
         # A function type is handled differently because of the position of the
         # name.
         if arg.type is ArgumentType.FUNCTION:
-            s += _fmt_argument_as_cpp_type(spec, arg.definition.result,
-                    scope=scope, strip=strip, as_xml=as_xml)
+            s += _fmt_argument_as_cpp_type(spec, arg.definition.result, scope=scope)
 
             s += ' (' + '*' * nr_derefs + name + ')('
 
@@ -198,7 +195,8 @@ def _fmt_argument_as_cpp_type(spec, arg, scope=None,
         elif arg.type is ArgumentType.WSTRING:
             s += 'wchar_t'
 
-        elif arg.type in (ArgumentType.BYTE, ArgumentType.ASCII_STRING, ArgumentType.LATIN1_STRING, ArgumentType.UTF8_STRING, ArgumentType.STRING):
+        elif arg.type in (ArgumentType.BYTE, ArgumentType.ASCII_STRING, ArgumentType.LATIN1_STRING,
+                          ArgumentType.UTF8_STRING, ArgumentType.STRING):
             s += 'char'
 
         elif arg.type is ArgumentType.USHORT:
@@ -259,17 +257,13 @@ def _fmt_argument_as_cpp_type(spec, arg, scope=None,
         elif arg.type is ArgumentType.DEFINED:
             # The only defined types still remaining are arguments to templates
             # and default values.
-            if as_xml:
-                s += arg.definition.as_py
-            else:
-                if spec.c_bindings:
-                    s += 'struct '
+            if spec.c_bindings:
+                s += 'struct '
 
-                s += arg.definition.cpp_stripped(strip)
+            s += arg.definition.cpp_stripped(strip)
 
         elif arg.type is ArgumentType.MAPPED:
-            s += _fmt_argument_as_cpp_type(spec, arg.definition.type,
-                    scope=scope, strip=strip, as_xml=as_xml)
+            s += _fmt_argument_as_cpp_type(spec, arg.definition.type, scope=scope)
 
         elif arg.type is ArgumentType.CLASS:
             from sipbuild.generator.outputs.formatters.klass import fmt_class_as_scoped_name
@@ -278,21 +272,19 @@ def _fmt_argument_as_cpp_type(spec, arg, scope=None,
                 s += 'union ' if arg.definition.class_key is ClassKey.UNION else 'struct '
 
             s += fmt_class_as_scoped_name(spec, arg.definition, scope=scope,
-                    strip=strip, make_public=make_public, as_xml=as_xml)
+                                          strip=strip, make_public=False, as_xml=False)
 
         elif arg.type is ArgumentType.TEMPLATE:
             from sipbuild.generator.outputs.formatters.template import fmt_template_as_cpp_type
-
-            s += fmt_template_as_cpp_type(spec, arg.definition, strip=strip,
-                    as_xml=as_xml)
+            s += fmt_template_as_cpp_type(spec, arg.definition, strip=strip, as_xml=False)
 
         elif arg.type is ArgumentType.ENUM:
             from sipbuild.generator.outputs.formatters.enum import fmt_enum_as_cpp_type
+            s += fmt_enum_as_cpp_type(arg.definition, make_public=False, strip=strip)
 
-            s += fmt_enum_as_cpp_type(arg.definition, make_public=make_public,
-                    strip=strip)
-
-        elif arg.type in (ArgumentType.PYOBJECT, ArgumentType.PYTUPLE, ArgumentType.PYLIST, ArgumentType.PYDICT, ArgumentType.PYCALLABLE, ArgumentType.PYSLICE, ArgumentType.PYTYPE, ArgumentType.PYBUFFER, ArgumentType.PYENUM, ArgumentType.ELLIPSIS):
+        elif arg.type in (ArgumentType.PYOBJECT, ArgumentType.PYTUPLE, ArgumentType.PYLIST, ArgumentType.PYDICT,
+                          ArgumentType.PYCALLABLE, ArgumentType.PYSLICE, ArgumentType.PYTYPE, ArgumentType.PYBUFFER,
+                          ArgumentType.PYENUM, ArgumentType.ELLIPSIS):
             s += 'PyObject *'
 
     for i in range(nr_derefs):
@@ -307,17 +299,15 @@ def _fmt_argument_as_cpp_type(spec, arg, scope=None,
     if is_reference:
         s += ' &'
 
-    return s
+    return s.replace(' ', '')
 
 
-def argument_as_cpp_type(spec, arg):
-    return _fmt_argument_as_cpp_type(spec, arg, strip=STRIP_GLOBAL)
+def get_type_signature(spec, arg):
+    return _fmt_argument_as_cpp_type(spec, arg)
 
 
-def signature_as_cpp_declaration(spec, cpp_signature):
-    args = [_fmt_argument_as_cpp_type(spec, arg, strip=STRIP_GLOBAL)
-            for arg in cpp_signature.args]
-    return ', '.join(args)
+def get_fct_arg_signature(spec, cpp_signature):
+    return ','.join(_fmt_argument_as_cpp_type(spec, arg) for arg in cpp_signature.args)
 
 
 def signature_as_result_type_hint(spec, py_signature):

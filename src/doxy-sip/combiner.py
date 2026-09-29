@@ -154,6 +154,8 @@ def merge_description(sip_docstring, dox_node):
     return tag, merged_desc
 
 
+#==============================================================================
+
 @dataclasses.dataclass
 class FunctionDeclaration:
 
@@ -224,9 +226,8 @@ def combine_constructors(sip_spec, sip_klass, dox_klass):
         if m.child_text('name') != dox_klass.child_text('compoundname'):
             return False
 
-        dox_args = ', '.join(dox_struct.get_stripped_type(param_node.find_child('type'))
-                             for param_node in m.find_children('param'))
-        if ctor.cpp_arg_signature != dox_args:
+        dox_arg_sig = dox_struct.get_fct_arg_signature(m)
+        if ctor.cpp_arg_signature != dox_arg_sig:
             return False
 
         return True
@@ -281,13 +282,12 @@ def combine_overload(sip_spec, overload, dox_klass):
         if overload.is_static != (m.attr('static') == 'yes'):
             return False
 
-        dox_result_type = dox_struct.get_stripped_type(m.find_child('type'))
-        if overload.result_type != dox_result_type:
+        dox_result_sig = dox_struct.get_type_signature(m.find_child('type'))
+        if overload.result_signature != dox_result_sig:
             return False
 
-        dox_args = ', '.join(dox_struct.get_stripped_type(param_node.find_child('type'))
-                             for param_node in m.find_children('param'))
-        if overload.cpp_arg_signature != dox_args:
+        dox_arg_sig = dox_struct.get_fct_arg_signature(m)
+        if overload.cpp_arg_signature != dox_arg_sig:
             return False
 
         return True
@@ -420,8 +420,8 @@ def combine_variable(sip_spec, sip_var, dox_var):
     else:
         description = None
 
-    has_const_type = sip_var.type.is_const and len(sip_var.type.derefs) == 0
-    is_const = has_const_type and sip_var.is_static
+    has_const_type = sip_var.type.is_const# and len(sip_var.type.derefs) == 0
+    is_const = has_const_type and (sip_var.is_static or sip_var.scope is None)
     qualifiers = []
     if sip_var.no_setter or has_const_type:
         qualifiers.append('readonly')

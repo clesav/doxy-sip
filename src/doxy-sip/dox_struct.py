@@ -11,27 +11,31 @@ from sphinx.domains import Domain
 
 class DoxElement:
 
-    def __init__(self, element: Element):
+    def __init__(self, element: Element, index_root: Element):
         self._element = element
+        self._index_root = index_root
 
     def find_children(self, tag:str):
         for n in self._element.childNodes:
             if n.nodeType == Element.ELEMENT_NODE and n.tagName == tag:
-                yield DoxElement(n)
+                yield DoxElement(n, self._index_root)
 
     def find_child(self, tag:str):
         for n in self._element.childNodes:
             if n.nodeType == Element.ELEMENT_NODE and n.tagName == tag:
-                return DoxElement(n)
+                return DoxElement(n, self._index_root)
         return None
 
     def getElementsByTagName(self, tag:str):
         for n in self._element.getElementsByTagName(tag):
-            yield DoxElement(n)
+            yield DoxElement(n, self._index_root)
 
     def children(self):
         for n in self._element.childNodes:
-            yield DoxElement(n)
+            yield DoxElement(n, self._index_root)
+
+    def parent(self):
+        return DoxElement(self._element.parentNode, self._index_root)
 
     def attr(self, name:str):
         return self._element.getAttribute(name)
@@ -47,6 +51,9 @@ class DoxElement:
         if n is None:
             return None
         return n.text()
+
+    def index(self):
+        return self._index_root
 
     def __getattr__(self, attr):
         return getattr(self._element, attr)
@@ -72,11 +79,11 @@ def _get_dox_index(domain):
         dox_index = xml_parse(index_path)
         domain.data['sip_dox_index'] = dox_index
 
-    root = DoxElement(dox_index.documentElement)
+    root = DoxElement(dox_index.documentElement, dox_index.documentElement)
     return root
 
 
-def _load_dox_compound(domain, fn):
+def _load_dox_compound(domain, index, fn):
     if fn in _dox_file_cache:
         xmldoc = _dox_file_cache[fn]
     else:
@@ -85,7 +92,7 @@ def _load_dox_compound(domain, fn):
         xmldoc = xml_parse(fp)
         _dox_file_cache[fn] = xmldoc
 
-    root_element = DoxElement(xmldoc.documentElement)
+    root_element = DoxElement(xmldoc.documentElement, index)
     return root_element.find_child('compounddef')
 
 
@@ -98,13 +105,13 @@ def get_dox_class(domain, name, kinds):
         if class_name_node.text() != name: continue
 
         refid = node.attr('refid')
-        dox_klass = _load_dox_compound(domain, refid)
+        dox_klass = _load_dox_compound(domain, dox_index, refid)
         return dox_klass
 
     return None
 
 
-def _find_global_member(domain, name, kind):
+def _find_member(domain, name, kind):
     dox_index = _get_dox_index(domain)
 
     if '::' in name:
@@ -112,30 +119,42 @@ def _find_global_member(domain, name, kind):
     else:
         namespace, basename = None, name
 
+    cpd_id = None
+    member_id = None
+    cpd_kind = ''
     for index_cpd_node in dox_index.find_children('compound'):
         for index_member_node in index_cpd_node.find_children('member'):
             if index_member_node.attr('kind') != kind: continue
             if index_member_node.child_text('name') != basename: continue
-            if namespace is None:
-                #Global enums belong to a 'file' compound
-                if index_cpd_node.attr('kind') != 'file': continue
-            else:
-                if index_cpd_node.child_text('name') != namespace: continue
 
-            cpd_refid = index_cpd_node.attr('refid')
-            cpd_root = _load_dox_compound(domain, dox_index, cpd_refid)
-            for n in cpd_root.getElementsByTagName('memberdef'):
-                if n.attr('kind') == kind and n.child_text('name') == basename:
-                    return n
+            if namespace is not None:
+                if index_cpd_node.child_text('name') == namespace:
+                    cpd_id = index_cpd_node.attr('refid')
+                    member_id = index_member_node.attr('refid')
+                    break
+
+            else:
+                k = index_cpd_node.attr('kind')
+                if k in ('class', 'struct', 'union', 'namespace'): continue
+                if k == 'file' and cpd_kind and cpd_kind != 'file': continue
+
+                cpd_id = index_cpd_node.attr('refid')
+                member_id = index_member_node.attr('refid')
+
+    if cpd_id is not None:
+        cpd_root = _load_dox_compound(domain, dox_index, cpd_id)
+        for n in cpd_root.getElementsByTagName('memberdef'):
+            if n.attr('id') == member_id:
+                return n
 
     return None
 
 
 def get_dox_enum(domain, name):
-    return _find_global_member(domain, name, 'enum')
+    return _find_member(domain, name, 'enum')
 
 def get_dox_variable(domain, name):
-    return _find_global_member(domain, name, 'variable')
+    return _find_member(domain, name, 'variable')
 
 
 #Mapping doxygen admonition -> sphinx admonition
@@ -143,7 +162,6 @@ def get_dox_variable(domain, name):
 _ADMONITIONS = {
     'note': 'note',
     'see': 'seealso',
-
 }
 
 
@@ -248,16 +266,55 @@ def extract_single_line_description(dox_node: DoxElement) -> str:
     return lines[0] if lines else None
 
 
-def get_stripped_type(dox_type_node):
+_ref_to_scoped_name_cache = {}
+
+def _dox_ref_to_scoped_name(ref_node):
+    ref_id = ref_node.attr('refid')
+
+    result = _ref_to_scoped_name_cache.get(ref_id, None)
+    if result is not None:
+        return result
+
+    dox_index = ref_node.index()
+    result = None
+    if ref_node.attr('kindref') == 'compound':
+        for cpd_node in dox_index.find_children('compound'):
+            if cpd_node.attr('refid') == ref_id:
+                result = cpd_node.child_text('name')
+                break
+    else: #member search
+        for cpd_node in dox_index.find_children('compound'):
+            for mb_node in cpd_node.find_children('member'):
+                if mb_node.attr('refid') == ref_id:
+                    if cpd_node.attr('kind') in ('class', 'struct', 'union', 'namespace'):
+                        result = cpd_node.child_text('name') + '::' + mb_node.child_text('name')
+                    else:
+                        result = mb_node.child_text('name')
+                    break
+
+    if result is None:
+        result = ref_node.text()
+    _ref_to_scoped_name_cache[ref_id] = result
+
+    return result
+
+
+def get_type_signature(dox_type_node):
     t = []
     for n in dox_type_node.children():
         if n.nodeType == Element.TEXT_NODE:
             t.append(n.nodeValue)
         elif n.nodeType == Element.ELEMENT_NODE:
             if n.tagName == 'ref':
-                t.append(n.text())
+                scoped_name = _dox_ref_to_scoped_name(n)
+                t.append(scoped_name)
 
     s = ''.join(t)
-    s = s.replace('constexpr', '').strip()
+    s = s.replace('constexpr', '')
+    s = s.replace(' ', '')
     return s
 
+
+def get_fct_arg_signature(dox_fct_node):
+    return ','.join(get_type_signature(param_node.find_child('type'))
+                    for param_node in dox_fct_node.find_children('param'))
