@@ -154,6 +154,8 @@ def merge_description(sip_docstring, dox_node):
     return tag, merged_desc
 
 
+#==============================================================================
+
 @dataclasses.dataclass
 class FunctionDeclaration:
 
@@ -420,8 +422,8 @@ def combine_variable(sip_spec, sip_var, dox_var):
     else:
         description = None
 
-    has_const_type = sip_var.type.is_const and len(sip_var.type.derefs) == 0
-    is_const = has_const_type and sip_var.is_static
+    has_const_type = sip_var.type.is_const# and len(sip_var.type.derefs) == 0
+    is_const = has_const_type and (sip_var.is_static or sip_var.scope is None)
     qualifiers = []
     if sip_var.no_setter or has_const_type:
         qualifiers.append('readonly')
