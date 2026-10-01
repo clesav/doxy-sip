@@ -7,6 +7,9 @@ import os
 import weakref
 from xml.dom.minidom import Element, parse as xml_parse
 from sphinx.domains import Domain
+from sphinx.util import logging
+
+_LOGGER = logging.getLogger('dox_struct')
 
 
 class DoxElement:
@@ -101,8 +104,8 @@ def get_dox_class(domain, name, kinds):
     for node in dox_index.find_children('compound'):
         if kinds and node.attr('kind') not in kinds: continue
 
-        class_name_node = node.find_child('name')
-        if class_name_node.text() != name: continue
+        class_name = node.child_text('name')
+        if class_name != name: continue
 
         refid = node.attr('refid')
         dox_klass = _load_dox_compound(domain, dox_index, refid)
@@ -245,9 +248,110 @@ def parse_dox_description(dox_node):
                     lines.extend('   ' + line for line in parse_dox_description(n.find_child('para')))
                     lines.newline()
                 else:
-                    raise ValueError('Unknown section kind: ' + k)
+                    _LOGGER.warning("parse_dox_description() : unsupported section kind " + k)
+
+            elif n.tagName == 'itemizedlist':
+                lines.newline()
+                lines.extend(_parse_dox_list(n))
+                lines.newline()
+
+            elif n.tagName == 'table':
+                lines.newline()
+                lines.extend(_parse_dox_table(n))
+                lines.newline()
+
+            elif n.tagName == 'linebreak':
+                lines.newline()
+
+            else:
+                _LOGGER.warning("parse_dox_description() : unsupported tag " + n.tagName)
 
     return lines.clean_lines()
+
+
+def _parse_dox_list(list_node):
+    lines = []
+    for item_node in list_node.find_children('listitem'):
+        item_lines = parse_dox_description(item_node)
+        lines.extend(('  ' if i else '- ') + item_line
+                     for i, item_line in enumerate(item_lines))
+        lines.append('')
+    return lines
+
+
+def _parse_dox_table(table_node):
+
+    class _Entry:
+        def __init__(self, entry_node):
+            self.content = parse_dox_description(entry_node)
+            self.len = max((len(line) for line in self.content), default=0)
+            self.rowspan = int(entry_node.attr('rowspan')) if entry_node.attr('rowspan') else 1
+            self.colspan = int(entry_node.attr('colspan')) if entry_node.attr('colspan') else 1
+            self.thead = (entry_node.attr('thead') == 'yes')
+
+    class _Cell:
+        def __init__(self, entry, rofs, cofs):
+            self.entry = entry
+            self.rofs = rofs
+            self.cofs = cofs
+            self.w = int((entry.len / entry.colspan) + (1 if (cofs < (entry.len % entry.colspan)) else 0))
+            self.h = 1 if rofs else len(entry.content)
+            #boolean indicating if the cell has a border
+            self.bottom = (rofs == entry.rowspan - 1)
+            self.right = (cofs == entry.colspan - 1)
+
+    nrows = int(table_node.attr('rows'))
+    ncols = int(table_node.attr('cols'))
+    table = [None] * nrows
+    for row in range(nrows):
+        table[row] = [None] * ncols
+
+    #parse the content of each cell into a list of list indexed by [row][col]
+    for nrow, row_node in enumerate(table_node.find_children('row')):
+        ncol = 0
+        for entry_node in row_node.find_children('entry'):
+            while table[nrow][ncol] is not None: ncol += 1
+            entry = _Entry(entry_node)
+            for r in range(entry.rowspan):
+                for c in range(entry.colspan):
+                    table[nrow + r][ncol + c] = _Cell(entry, r, c)
+            ncol += entry.colspan
+
+    col_widths = [ max(cell.w for cell in col) for col in zip(*table) ]
+    row_heights = [ max(cell.h for cell in row) for row in table ]
+    has_header = all(cell.entry.thead for cell in table[0])
+    top_sep_line = '+' + '+'.join(('-' * (w + 2)) for w in col_widths) + '+'
+    lines = [ top_sep_line ]
+    for nrow, row in enumerate(table):
+        for nsubrow in range(row_heights[nrow]):
+            subrow_line = '|'
+            for ncol, cell in enumerate(row):
+                if not cell.cofs:
+                    n = sum(col_widths[ncol + c] for c in range(cell.entry.colspan)) + 3 * (cell.entry.colspan - 1)
+                    if nsubrow < cell.h and not cell.rofs:
+                        subrow_line += ' ' + cell.entry.content[nsubrow].ljust(n + 1)
+                    else:
+                        subrow_line += ' ' * (n + 2)
+
+                if cell.right:
+                    subrow_line += '|'
+
+            assert len(subrow_line) == len(top_sep_line)
+            lines.append(subrow_line)
+
+        sep_line = ''
+        previous_cell_bottom = True
+        row_sep = '=' if has_header and not nrow else '-'
+        for ncol, cell in enumerate(row):
+            sep_line += '+' if previous_cell_bottom or cell.bottom else ' '
+            previous_cell_bottom = cell.bottom
+            sep_line += (row_sep if cell.bottom else ' ') * (col_widths[ncol] + 2)
+
+        sep_line += '+'
+        assert len(sep_line) == len(top_sep_line)
+        lines.append(sep_line)
+
+    return lines
 
 
 def extract_description(dox_node: DoxElement) -> list[str]:
