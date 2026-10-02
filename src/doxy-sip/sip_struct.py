@@ -405,16 +405,16 @@ def get_sip_spec(data, sip_project_dir, sip_module_name):
     return spec
 
 
-def find_sip_klass(spec, klass_name):
+def find_sip_klass(spec, name):
     for k in spec.classes:
-        if get_scoped_py_name(k) == klass_name:
+        if get_scoped_py_name(k) == name:
             return k
     return None
 
 
-def find_sip_enum(spec, enum_name):
+def find_sip_enum(spec, name):
     for e in spec.enums:
-        if get_scoped_py_name(e) == enum_name:
+        if get_scoped_py_name(e) == name:
             return e
     return None
 
