@@ -159,6 +159,9 @@ def get_dox_enum(domain, name):
 def get_dox_variable(domain, name):
     return _find_member(domain, name, 'variable')
 
+def get_dox_macro(domain, name):
+    return _find_member(domain, name, 'define')
+
 
 #Mapping doxygen admonition -> sphinx admonition
 #TODO: complete the list
