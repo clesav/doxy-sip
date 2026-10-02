@@ -657,19 +657,57 @@ class SIPVariableDirective(PyVariable, _SIPDirectiveMixin):
                 dox_klass = self._find_matching_dox_class(sip_var.scope, 'any')
                 var_decl = combiner.combine_class_variable(self.sip_spec, sip_var, dox_klass)
 
-            self.content = StringList(var_decl.description) + self.content
-
-            self.options['type'] = var_decl.type_
-            if var_decl.const:
-                self.options['_const'] = None
-            elif '_const' in self.options:
-                del self.options['_const']
-            self.options['_qualifiers'] = var_decl.qualifiers
+            return self._run_from_declaration(var_decl)
 
         else:
 
             if '_type' in self.options:
                 self.options['type'] = self.options['_type']
 
+            return super().run()
+
+    def _run_from_declaration(self, var_decl):
+        self.arguments = [var_decl.name]
+
+        if var_decl.description:
+            self.content = StringList(var_decl.description + ['']) + self.content
+
+        self.options['type'] = var_decl.type_
+        if var_decl.const:
+            self.options['_const'] = None
+        self.options['_qualifiers'] = var_decl.qualifiers
+
         return super().run()
 
+
+class SIPMacroConstantDirective(SIPVariableDirective):
+
+    required_arguments = 1
+    optional_arguments = 1
+    option_spec = ObjectDescription.option_spec.copy()
+
+    def run(self):
+        #Get the currently loaded SIP specification
+        if err_nodes := self._get_loaded_spec():
+            return err_nodes
+
+        if len(self.arguments) == 2:
+            var_name, macro_name = self.arguments
+        else:
+            var_name = macro_name = self.arguments[0]
+
+        #Find the variable
+        sip_var = sip_struct.find_sip_variable(self.sip_spec, var_name)
+        if not sip_var:
+            return self._generate_error("Unknown variable name: " + var_name)
+        if sip_var.scope is not None:
+            return self._generate_error("Class macro-constants not supported")
+
+        #Find the macro definition
+        dox_macro = dox_struct.get_dox_macro(self.env.domains['sip'], macro_name)
+        if dox_macro is None:
+            return self._generate_error(f'Unknown macro name: "{macro_name}"')
+
+        var_decl = combiner.combine_variable(self.sip_spec, sip_var, dox_macro)
+
+        return self._run_from_declaration(var_decl)

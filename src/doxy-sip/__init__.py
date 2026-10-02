@@ -14,6 +14,7 @@ from .directives import (
     SIPMethodDirective,
     SIPPropertyDirective,
     SIPVariableDirective,
+    SIPMacroConstantDirective,
 )
 
 
@@ -32,6 +33,7 @@ class SIPDomain(Domain):
         'method': SIPMethodDirective,
         'property': SIPPropertyDirective,
         'variable': SIPVariableDirective,
+        'macro-constant': SIPMacroConstantDirective,
     }
     initial_data = {
         'sip_specs': {},
