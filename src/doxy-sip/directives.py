@@ -120,14 +120,9 @@ class _SIPDirectiveMixin:
         return dox_klass
 
 
-class _SIPDirective(SphinxDirective, _SIPDirectiveMixin):
+class SIPModuleDirective(SphinxDirective, _SIPDirectiveMixin):
 
     has_content = True
-
-
-class SIPModuleDirective(_SIPDirective):
-
-    required_arguments = 0
 
     def run(self):
         #Get the currently loaded SIP specification
@@ -205,9 +200,7 @@ class _AutoGenOptions:
                (self._gen_undoc or var_decl.description is not None)
 
 
-#==============================================================================
-
-class _AutoDirective(_SIPDirective):
+class _SIPAutoGenDirectiveMixin(_SIPDirectiveMixin):
 
     has_content = True
 
@@ -215,7 +208,8 @@ class _AutoDirective(_SIPDirective):
 
     sip_member_filters = frozenset()
 
-    def run(self):
+
+    def init_autogen(self):
         source, lineno = self.get_source_info()
         LOGGER.debug('[doxy-sip] %s:%s: input:\n%s', source, lineno, self.block_text)
 
@@ -224,12 +218,6 @@ class _AutoDirective(_SIPDirective):
             return err_nodes
 
         self.sip_options = _AutoGenOptions(self.options, self.sip_member_filters)
-
-        return self.run_sip_directive()
-
-
-    def _run_sip_directive(self):
-        raise NotImplementedError
 
 
     def _generate_class(self, sip_klass, dox_klass):
@@ -460,14 +448,17 @@ class _AutoDirective(_SIPDirective):
             yield ""
 
 
-class SIPClassDirective(_AutoDirective):
+class SIPClassDirective(SphinxDirective, _SIPAutoGenDirectiveMixin):
     '''Directive to document a class.
     '''
 
     required_arguments = 1
+    has_content = True
+    option_spec = _AutoGenOptions.OPTION_SPEC
     sip_member_filters = _AutoGenOptions.CLASSLIKE_MEMBER_FILTERS
 
-    def run_sip_directive(self):
+    def run(self):
+        self.init_autogen()
 
         klass_name = self.arguments[0]
 
@@ -485,7 +476,7 @@ class SIPClassDirective(_AutoDirective):
         return _parse_generated_content(self.state, klass_lines)
 
 
-class SIPNamespaceDirective(_AutoDirective):
+class SIPNamespaceDirective(SphinxDirective, _SIPAutoGenDirectiveMixin):
     '''Directive to document a namespace.
     Namespace in SIP bindings are just classes so we generate the nodes just like a class.
     Simply to denote the difference, we tweak in the resulting nodes to insert a
@@ -493,9 +484,12 @@ class SIPNamespaceDirective(_AutoDirective):
     '''
 
     required_arguments = 1
+    has_content = True
+    option_spec = _AutoGenOptions.OPTION_SPEC
     sip_member_filters = _AutoGenOptions.CLASSLIKE_MEMBER_FILTERS
 
-    def run_sip_directive(self):
+    def run(self):
+        self.init_autogen()
 
         ns_name = self.arguments[0]
 
@@ -519,13 +513,15 @@ class SIPNamespaceDirective(_AutoDirective):
         return nodes
 
 
-class SIPEnumDirective(_AutoDirective):
+class SIPEnumDirective(SphinxDirective, _SIPAutoGenDirectiveMixin):
     '''Directive to document a global enumeration.
     '''
 
     required_arguments = 1
+    has_content = True
 
-    def run_sip_directive(self):
+    def run(self):
+        self.init_autogen()
 
         enum_name = self.arguments[0]
 
@@ -546,13 +542,15 @@ class SIPEnumDirective(_AutoDirective):
         return nodes
 
 
-class SIPPropertyDirective(_AutoDirective):
+class SIPPropertyDirective(SphinxDirective, _SIPAutoGenDirectiveMixin):
     '''Directive to document a property.
     '''
 
     required_arguments = 1
+    has_content = True
 
-    def run_sip_directive(self):
+    def run(self):
+        self.init_autogen()
 
         prop_name = self.arguments[0]
 
