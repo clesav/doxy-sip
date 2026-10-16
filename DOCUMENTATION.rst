@@ -105,11 +105,11 @@ Options:
        
       [filters] defines the filtering rules for displaying members. See the dedicated section below.
 
-   `:no-header`: [filters]
+   `:no-header`:
       If set, the class header (class name, qualifiers and inheritance) is not generated and the content
       for the class members (if generated) is not indented.
 
-   `:no-doc`: [filters]
+   `:no-doc`:
       If set, the class description is not generated.
 
 
