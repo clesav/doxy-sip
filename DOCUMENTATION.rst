@@ -67,69 +67,128 @@ Tag values:
 * `append` : the C++ description is added after the docstring content.
 * `discard` (default) : the C++ data is discarded.
 
-Note 1: In the case of functions and methods, the arguments and result descriptions in C++ data (from
-\\param or \\return tags) are kept if no tag is present, and is always placed after the function description,
-regardless of the tag value.
+Notes:
 
-Note 2: The docstring is processes as regular reStructuredText content so markup can be used.
+- In the case of functions and methods, the arguments and result descriptions in C++ data (from
+  \\param or \\return tags) are kept if no tag is present, and is always placed after the
+  function description, regardless of the tag value.
+- The docstring is processes as regular reStructuredText content so markup can be used.
 
 
 Directives
 ----------
 
-**..sip:currentmodule:: [name]**
+`..sip:specification:: [name]`
+******************************
 
-   This directive sets the currently loaded SIP module specification. The name must be fully qualified.
+This directive sets the currently loaded SIP module specification. The name must be fully qualified.
 
-   Note: It must be used before any other Doxy-SIP directive. All other directives work with the module
-   loaded using this directive.
-
-
-**..sip:module::**
-
-   This directive inserts the content of the current module docstring.
+Note: It must be used before any other Doxy-SIP directive. All other directives work with the module
+loaded using this directive.
 
 
-**..sip:class:: [name]**
+`..sip:module::`
+****************
 
-   This directive inserts the description for the class defined in the current module.
+This directive inserts the content of the current module docstring.
+
+
+`..sip:class:: [name]`
+**********************
+
+This directive inserts the description for the class defined in the current module.
+
+Options:
    
-   Options:
+   `:members`: [filters]
+      Insert the documentation of the class members : sub-classes, methods, attributes, etc.
+       
+      [filters] defines the filtering rules for displaying members. See the dedicated section below.
+
+   `:no-header`: [filters]
+      If set, the class header (class name, qualifiers and inheritance) is not generated and the content
+      for the class members (if generated) is not indented.
+
+   `:no-doc`: [filters]
+      If set, the class description is not generated.
+
+
+`..sip:namespace:: [name]`
+**************************
+
+Namespaces are implemented by SIP as regular classes. To differentiate them, a ``[namespace]`` tag is added
+as prefix to the class signature.
+
+Options are the same as for ``..sip:class::``
+
+
+`..sip:property:: [name]`
+*************************
+
+This directive describes a Python class property.
+
+
+`..sip:enum:: [name]`
+*********************
+
+This directive describes an enumeration class.
+
+
+`..sip:method:: [name]`
+***********************
+
+This directive describes a method.
+
+
+`..sip:variable:: [name]`
+*************************
+
+This directive describes a variable/attribute.
+
+
+`..sip:macro-constant:: [var_name] [macro_name]`
+************************************************
+
+This directive describes a C++ constant defined by a macro, and implemented in Python
+as a constant global variable.
+
+**var_name** : Python variable name
+
+**macro_name** (optional): C++ macro name, if different from the Python variable name.
+
+
+Member filtering
+----------------
+
+By defaults, the ``:member:`` option will display class/namespace members that are
+*public* and documented (either in Doxygen or in SIP docstrings).
+To add other members, filtering flags must be added as::
+
+   :members: [undoc|private|special|all]
+
+The following member filters are define:
+
+- ``undoc`` : if specified, undocumented members will be displayed.
+- ``private`` : if specified, private members (i.e. with a Python name starting by an underscore)
+  will be displayed.
+- ``special`` : if specified, special methods (i.e. with a Python name starting and ending
+  with a double underscore) will be displayed.
+- ``all`` : if specified, all members will be displayed.
+
+Notes:
+
+* If several flags are specified, they are separated by a comma. Example: ``:members: undoc,private``
+* An undocumented private member requires both ``undoc`` and ``private`` to be displayed. Idem for
+  an undocumented special method, both ``undoc`` and ``special`` are required.
+
+A special filtering rule applies to constructors when displayed as part of a sip:class directive:
+
+   By default, SIP generates automatically *default* constructors for each class, where possible:
+   the no-argument constructor (``Class()``) and the copy constructor
+   (C++: ``Class(const Class&)``, Python: ``Class(a0: Class)``).
    
-      `:members`:
-         Insert the documentation of the class members : sub-classes, methods, attributes, etc.
-        
-      `:undoc-members`:
-         If set, undocumented members are included. By default they are not excluded.
-         Note that this option requires ``:members:`` to be set as well.
-      
-      `:undoc-slots`:
-         By default, Python special functions or "slots" (e.g. `__str__()`) are excluded if undocumented,
-         even if ``undoc-members`` is set. If ``undoc-slots`` is set, they are included.
-         Note that this option requires ``:members:`` and ``:undoc-members:`` to be set as well.
-
-
-**..sip:namespace:: [name]**
-
-   Namespaces are implemented by SIP as regular classes. To differentiate them, a ``[namespace]`` tag is added
-   as prefix to the class signature.
-
-   Options are the same as for ``..sip:class::``
-
-
-**..sip:enum:: [name]**
-
-   This directive describes an enumeration class.
-
-   Options are the same as for ``..sip:class::``
-
-
-**..sip:method:: [name]**
-
-   This directive describes a method.
-
-
-
-
-
-
+   If the class has only *default* constructors, then they are only displayed if they are documented
+   (or the ``undoc`` flag is specified).
+   
+   If the class has any *non-default* constructors, then all constructors are displayed, whether they're
+   documented or not.
