@@ -221,8 +221,16 @@ def parse_dox_description(dox_node):
 
         elif n.nodeType == Element.ELEMENT_NODE:
             if n.tagName == 'emphasis':
-                text = n.text()
-                lines += f' *{text}*'
+                lines += ' *{0}*'.format(n.text())
+
+            elif n.tagName == 'bold':
+                lines += ' **{0}**'.format(n.text())
+
+            elif n.tagName == 'computeroutput':
+                lines += ' ``{0}``'.format(n.text())
+
+            elif n.tagName == 'ulink':
+                lines += ' `{0} <{1}>`_'.format(n.text(), n.attr('url'))
 
             elif n.tagName == 'para':
                 lines.newline()
@@ -263,7 +271,7 @@ def parse_dox_description(dox_node):
                 lines.extend(_parse_dox_table(n))
                 lines.newline()
 
-            elif n.tagName == 'linebreak':
+            elif n.tagName in ('linebreak', 'parameterlist'):
                 lines.newline()
 
             else:
