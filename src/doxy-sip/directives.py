@@ -157,10 +157,14 @@ class _AutoGenOptions:
 
     OPTION_SPEC = {
         'members': directives.unchanged,
+        'no-header': directives.flag,
+        'no-doc': directives.flag,
     }
 
     def __init__(self, options, filt_spec):
+        self.gen_header = 'no-header' not in options
         self.gen_members = 'members' in options
+        self.gen_doc = 'no-doc' not in options
 
         filt_opt = options.get('members', '')
         if filt_opt:
@@ -219,14 +223,18 @@ class _SIPAutoGenDirectiveMixin(_SIPDirectiveMixin):
 
 
     def _generate_class(self, sip_klass, dox_klass):
+        indent = ' ' * 3 if self.sip_options.gen_header else ''
         klass_lines = []
-        klass_lines.extend(self._generate_class_header(sip_klass))
+
+        if self.sip_options.gen_header:
+            klass_lines.extend(self._generate_class_header(sip_klass))
 
         #Add the class description by combining the doxygen description and the SIP docstring
-        _, klass_description = combiner.merge_description(sip_klass.docstring, dox_klass)
-        if klass_description:
-            _add_lines_to_result(klass_description, klass_lines, "   ")
-            klass_lines.append("")
+        if self.sip_options.gen_doc:
+            _, klass_description = combiner.merge_description(sip_klass.docstring, dox_klass)
+            if klass_description:
+                _add_lines_to_result(klass_description, klass_lines, indent)
+                klass_lines.append("")
 
         if not self.sip_options.gen_members:
             return klass_lines
@@ -238,7 +246,7 @@ class _SIPAutoGenDirectiveMixin(_SIPDirectiveMixin):
                       if e.scope == sip_klass and self.sip_options.gen_sub_type(e) ]
 
         if sub_classes or sub_enums:
-            klass_lines.append("   **Sub-types**:")
+            klass_lines.append(indent + "**Sub-types**:")
             klass_lines.append("")
 
             for sc in sub_classes:
@@ -248,30 +256,30 @@ class _SIPAutoGenDirectiveMixin(_SIPDirectiveMixin):
                                                         ('class', 'struct', 'union'))
                 subklass_lines = self._generate_class(sc, dox_subklass)
                 subklass_lines.append("")
-                _add_lines_to_result(subklass_lines, klass_lines, "      ")
+                _add_lines_to_result(subklass_lines, klass_lines, indent + "   ")
 
             #Add the enumerations
             for se in sub_enums:
                 decl = combiner.combine_class_enum(se, dox_klass)
                 enum_lines = list(self._generate_enum(decl))
                 enum_lines.append("")
-                _add_lines_to_result(enum_lines, klass_lines, "      ")
+                _add_lines_to_result(enum_lines, klass_lines, indent + "   ")
 
         #Add the constructors
-        ctor_lines = list(self._generate_constructors(sip_klass, dox_klass))
-        _add_lines_to_result(ctor_lines, klass_lines, "   ")
+        ctor_lines = list(self._generate_constructors(sip_klass, dox_klass, True))
+        _add_lines_to_result(ctor_lines, klass_lines, indent)
 
         #Add the methods
         method_lines = list(self._generate_methods(sip_klass, dox_klass))
-        _add_lines_to_result(method_lines, klass_lines, "   ")
+        _add_lines_to_result(method_lines, klass_lines, indent)
 
         #Add the properties
         property_lines = list(self._generate_properties(sip_klass))
-        _add_lines_to_result(property_lines, klass_lines, "   ")
+        _add_lines_to_result(property_lines, klass_lines, indent)
 
         #Add the variables
         var_lines = list(self._generate_class_attributes(sip_klass, dox_klass))
-        _add_lines_to_result(var_lines, klass_lines, "   ")
+        _add_lines_to_result(var_lines, klass_lines, indent)
 
         return klass_lines
 
