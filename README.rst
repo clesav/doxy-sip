@@ -49,7 +49,7 @@ Breathe is available from github and PyPI <https://pypi.org/project/doxy-sip/>. 
 Documentation
 -------------
 
-Short documentation - </DOCUMENTATION.rst>.
+Short documentation - <https://github.com/clesav/doxy-sip/blob/main/DOCUMENTATION.rst>.
 
 Requirements
 ------------
