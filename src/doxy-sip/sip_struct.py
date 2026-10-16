@@ -16,6 +16,8 @@ from sipbuild import AbstractProject
 from sipbuild.version import SIP_VERSION
 from sipbuild.generator import parse, resolve
 from sipbuild.exceptions import UserException
+from sphinx.domains.python import py_sig_re
+
 
 
 class SIP_Constructor:
@@ -416,6 +418,33 @@ def find_sip_enum(spec, name):
     for e in spec.enums:
         if get_scoped_py_name(e) == name:
             return e
+    return None
+
+
+def find_sip_method(spec, name):
+    m = py_sig_re.match(name)
+    if m is None:
+        return None
+    prefix, basename, _, _, _ = m.groups()
+
+    #try for a constructor
+    fq_name = f'{prefix}.{basename}' if prefix else basename
+    klass = find_sip_klass(spec, fq_name)
+    if klass:
+        return True, klass
+
+    #try for a regular method
+    if prefix is None:
+        return None
+
+    klass = find_sip_klass(spec, prefix.rstrip('.'))
+    if klass is None:
+        return None
+
+    for sip_member in klass.members:
+        if sip_member.py_name.name == basename:
+            return False, klass, sip_member
+
     return None
 
 

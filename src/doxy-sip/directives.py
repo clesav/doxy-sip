@@ -11,7 +11,7 @@ from docutils.statemachine import StringList
 from docutils.parsers.rst import directives
 from sphinx.util import logging
 from sphinx import addnodes
-from sphinx.domains.python import PyObject, PyVariable
+from sphinx.domains.python import PyObject, PyVariable, PyMethod
 from . import sip_struct
 from . import dox_struct
 from . import combiner
@@ -204,8 +204,6 @@ class _SIPAutoGenDirectiveMixin(_SIPDirectiveMixin):
 
     has_content = True
 
-    option_spec = _AutoGenOptions.OPTION_SPEC
-
     sip_member_filters = frozenset()
 
 
@@ -308,15 +306,16 @@ class _SIPAutoGenDirectiveMixin(_SIPDirectiveMixin):
                 yield ""
 
 
-    def _generate_constructors(self, sip_klass, dox_klass):
+    def _generate_constructors(self, sip_klass, dox_klass, klass_gen):
         ctor_decl_list = combiner.combine_constructors(self.sip_spec, sip_klass, dox_klass)
 
         all_defaults = all(c.default for c in ctor_decl_list)
 
-        first = True
+        first = klass_gen
+        indent = " " * 3 if klass_gen else ""
         for ctor_decl in ctor_decl_list:
 
-            if all_defaults and not self.sip_options.gen_constructor(ctor_decl):
+            if klass_gen and all_defaults and not self.sip_options.gen_constructor(ctor_decl):
                 continue
 
             if first:
@@ -324,15 +323,17 @@ class _SIPAutoGenDirectiveMixin(_SIPDirectiveMixin):
                 yield "**Constructors**:"
                 yield ""
 
-            yield "   .. py:method:: " + ctor_decl.signature
+            yield indent + ".. sip:method:: " + ctor_decl.signature
+            yield indent + "   :_autogen:"
+            yield indent + "   :no-index:"
             yield ""
 
             if ctor_decl.description:
-                yield from _yield_indented_lines(ctor_decl.description, "      ")
+                yield from _yield_indented_lines(ctor_decl.description, indent + "   ")
                 yield ""
 
             for arg_name, arg_desc in ctor_decl.arguments:
-                param_line = f"      :param {arg_name}:"
+                param_line = f"{indent}   :param {arg_name}:"
                 if arg_desc:
                     param_line += f" {arg_desc}"
                 yield param_line
@@ -343,46 +344,60 @@ class _SIPAutoGenDirectiveMixin(_SIPDirectiveMixin):
         first = True
         for sip_member in reversed(sip_klass.members):
             member = sip_struct.SIP_Callable(self.sip_spec, sip_klass, sip_member)
-
-            for overload in member.overloads:
-                fct_decl = combiner.combine_overload(self.sip_spec, overload, dox_klass)
-
-                if not self.sip_options.gen_method(fct_decl): continue
-
+            member_lines = list(self._generate_method(sip_klass, dox_klass, member, True))
+            if member_lines:
                 if first:
                     first = False
                     yield "**Methods**:"
                     yield ""
 
-                yield "   .. sip:method:: " + fct_decl.signature
+                yield from member_lines
 
-                qualifiers = []
-                if overload.is_static:
-                    qualifiers.append('static')
-                if overload.is_virtual:
-                    qualifiers.append('virtual')
-                if overload.is_abstract:
-                    qualifiers.append('abstract')
-                if qualifiers:
-                    yield "      :qualifiers: " + ','.join(qualifiers)
 
+    def _generate_method(self, sip_klass, dox_klass, sip_member, klass_gen):
+        indent = " " * 3 if klass_gen else ""
+        first = True
+        for overload in sip_member.overloads:
+            fct_decl = combiner.combine_overload(self.sip_spec, overload, dox_klass)
+
+            if klass_gen and not self.sip_options.gen_method(fct_decl): continue
+
+            sig_prefix = "" if klass_gen else sip_struct.get_scoped_py_name(sip_klass) + '.'
+            yield f"{indent}.. sip:method:: {sig_prefix}{fct_decl.signature}"
+            yield indent + "   :_autogen:"
+
+            if first:
+                first = False
+            else:
+                yield indent + "   :no-index:"
+
+            qualifiers = []
+            if overload.is_static:
+                qualifiers.append('static')
+            if overload.is_virtual:
+                qualifiers.append('virtual')
+            if overload.is_abstract:
+                qualifiers.append('abstract')
+            if qualifiers:
+                yield indent + "   :_qualifiers: " + ','.join(qualifiers)
+
+            yield ""
+
+            if fct_decl.description:
+                yield from _yield_indented_lines(fct_decl.description, indent + "   ")
                 yield ""
 
-                if fct_decl.description:
-                    yield from _yield_indented_lines(fct_decl.description, "      ")
-                    yield ""
+            for arg_name, arg_desc in fct_decl.arguments:
+                param_line = f"{indent}   :param {arg_name}:"
+                if arg_desc is not None:
+                    param_line += " " + arg_desc
+                if arg_desc or not overload.py_slot:
+                    yield param_line
 
-                for arg_name, arg_desc in fct_decl.arguments:
-                    param_line = f"      :param {arg_name}:"
-                    if arg_desc is not None:
-                        param_line += " " + arg_desc
-                    if arg_desc or not overload.py_slot:
-                        yield param_line
+            if fct_decl.result:
+                yield indent + "   :return: " + fct_decl.result
 
-                if fct_decl.result:
-                    yield "      :return: " + fct_decl.result
-
-                yield ""
+            yield ""
 
 
     def _generate_properties(self, sip_klass):
@@ -433,7 +448,7 @@ class _SIPAutoGenDirectiveMixin(_SIPDirectiveMixin):
                 first = False
                 yield "**Constants**:"
                 yield ""
- 
+
             yield from yield_var(var_decl)
             yield ""
 
@@ -568,47 +583,46 @@ class SIPPropertyDirective(SphinxDirective, _SIPAutoGenDirectiveMixin):
         return nodes
 
 
-_QUALIFIERS = ['abstract', 'virtual']
+class SIPMethodDirective(PyMethod, _SIPAutoGenDirectiveMixin):
+    '''Directive to document a class method or constructor.
+    '''
 
-def _qualifier_converter(opt_value):
-    qual_list = [ v.strip() for v in opt_value.split(',')]
-    if any(v not in _QUALIFIERS for v in qual_list):
-        return None
-    return qual_list
-
-
-class SIPMethodDirective(SphinxDirective):
-
-    required_arguments = 1
-    final_argument_whitespace = True
-    has_content = True
-
-    #Inherit all the options from PyObject, and add :qualifiers:
-    option_spec = PyObject.option_spec.copy()
+    option_spec = ObjectDescription.option_spec.copy()
     option_spec.update({
-        'qualifiers': _qualifier_converter,
+        '_autogen': directives.flag,
+        '_qualifiers': lambda x: [ v.strip() for v in x.split(',') ],
     })
 
+    def get_signature_prefix(self, sig):
+        qualifiers = self.options.get('_qualifiers', ())
+        if qualifiers:
+            qual_text = '[' + ', '.join(qualifiers) + ']'
+            return [ addnodes.desc_sig_keyword(text=qual_text), addnodes.desc_sig_space() ]
+        else:
+            return []
+
     def run(self):
+        self.init_autogen()
 
-        lines = [".. py:method:: " + self.arguments[0], ""]
-        _add_lines_to_result(self.content.data, lines, "   ")
+        if '_autogen' not in self.options:
+            sip_finding = sip_struct.find_sip_method(self.sip_spec, self.arguments[0])
+            if sip_finding is None:
+                return self._generate_error("Unknown method: " + self.arguments[0])
 
-        nodes = _parse_generated_content(self.state, lines)
+            dox_klass = self._find_matching_dox_class(sip_finding[1], 'class_like')
 
-        qualifiers = self.options.get('qualifiers', None)
-        if not qualifiers:
+            if sip_finding[0]: #constructor
+                lines = list(self._generate_constructors(sip_finding[1], dox_klass, False))
+            else: #regular method
+                member = sip_struct.SIP_Callable(self.sip_spec, sip_finding[1], sip_finding[2])
+                lines = list(self._generate_method(sip_finding[1], dox_klass, member, False))
+
+            _add_lines_to_result(self.content.data, lines, "   ")
+            nodes = _parse_generated_content(self.state, lines)
             return nodes
 
-        node_desc_sig = nodes[1][0]
-        assert isinstance(node_desc_sig, addnodes.desc_signature)
-
-        node_desc_sig.insert(0, addnodes.desc_sig_space())
-
-        qual_text = '[' + ' , '.join(qualifiers) + ']'
-        node_desc_sig.insert(0, addnodes.desc_annotation(text=qual_text))
-
-        return nodes
+        else:
+            return super().run()
 
 
 class SIPVariableDirective(PyVariable, _SIPDirectiveMixin):
