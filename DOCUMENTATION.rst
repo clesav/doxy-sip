@@ -14,7 +14,7 @@ Doxygen must be configured to produce XML output.
 
    .. code-block:: bash
 
-       pip install doxy-sip
+       pip install doxysip
 
 2. Add Doxy-SIP to the list of loaded extensions in the Sphinx ``conf.py`` file:
 
@@ -22,7 +22,7 @@ Doxygen must be configured to produce XML output.
 
           extensions = [
            ...,
-           'doxy-sip',
+           'doxysip',
           ]
 
 3. Add the required parameters in the Sphinx ``conf.py`` file:
@@ -32,7 +32,7 @@ Doxygen must be configured to produce XML output.
       sip_toml_project = "path/to/sip/project"
       sip_doxygen_project = "path/to/doxygen/xml/output"
 
-4. Start using the doxy-sip directives in the doc source files to insert object documentation.
+4. Start using the doxysip directives in the doc source files to insert object documentation.
 
 
 Extension configuration options

@@ -17,7 +17,7 @@ from . import dox_struct
 from . import combiner
 
 
-LOGGER = logging.getLogger('doxy-sip')
+LOGGER = logging.getLogger('doxysip')
 
 
 def _yield_indented_lines(lines, indent):
@@ -213,7 +213,7 @@ class _SIPAutoGenDirectiveMixin(_SIPDirectiveMixin):
 
     def init_autogen(self):
         source, lineno = self.get_source_info()
-        LOGGER.debug('[doxy-sip] %s:%s: input:\n%s', source, lineno, self.block_text)
+        LOGGER.debug('[doxysip] %s:%s: input:\n%s', source, lineno, self.block_text)
 
         #Get the currently loaded SIP specification
         if err_nodes := self._get_loaded_spec():

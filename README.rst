@@ -44,7 +44,7 @@ Installation
 
 Breathe is available from github and PyPI <https://pypi.org/project/doxy-sip/>. It can be installed with::
 
-    pip install doxy-sip
+    pip install doxysip
 
 Documentation
 -------------
