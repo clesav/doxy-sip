@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 
 [project]
-name = "doxy-sip"
+name = "doxysip"
 description = "A Sphinx extension for semi-automatic class documentation from SIP bindings and Doxygen"
 readme = "README.rst"
 license = "BSD-3-Clause"
