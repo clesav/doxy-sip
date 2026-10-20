@@ -4,14 +4,15 @@
 
 
 import os
+import sys
 from sipbuild.generator.outputs.formatters import (
     fmt_class_as_type_hint, fmt_argument_as_type_hint,
     fmt_signature_as_type_hint, fmt_scoped_py_name)
 from sipbuild.generator.specification import (
-    AccessSpecifier, ArgumentType, ArrayArgument, CachedName,
+    AccessSpecifier, ArgumentType, ArrayArgument, CachedName, ClassKey,
     Docstring, EnumBaseType, PyQtMethodSpecifier, PySlot, Signature)
 from sipbuild.generator.python_slots import is_number_slot, reflected_slot
-from sipbuild.generator.scoped_name import STRIP_NONE, STRIP_GLOBAL
+from sipbuild.generator.scoped_name import STRIP_GLOBAL
 from sipbuild import AbstractProject
 from sipbuild.version import SIP_VERSION
 from sipbuild.generator import parse, resolve
@@ -177,9 +178,9 @@ def _fmt_argument_as_cpp_type(spec, arg, scope=None):
         if arg.type is ArgumentType.FUNCTION:
             s += _fmt_argument_as_cpp_type(spec, arg.definition.result, scope=scope)
 
-            s += ' (' + '*' * nr_derefs + name + ')('
+            s += ' (' + '*' * nr_derefs + ')('
 
-            s += signature_as_cpp_declaration(spec, arg.definition)
+            s += get_fct_arg_signature(spec, arg.definition)
 
             s += ')'
 
@@ -371,10 +372,13 @@ def get_sip_spec(data, sip_project_dir, sip_module_name):
         except FileNotFoundError:
             raise Exception("Cannot load SIP project from " + sip_project_dir + ' (' + oldcwd + ')')
 
+        old_argv = sys.argv.copy()
+        sys.argv = [__file__]
         try:
             prj = AbstractProject.bootstrap('doc')
         finally:
             os.chdir(oldcwd)
+            sys.argv = old_argv
 
         # Get the list of directories to search for .sip files.
         sip_include_dirs = list(prj.sip_include_dirs)

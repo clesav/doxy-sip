@@ -11,7 +11,7 @@ from docutils.statemachine import StringList
 from docutils.parsers.rst import directives
 from sphinx.util import logging
 from sphinx import addnodes
-from sphinx.domains.python import PyObject, PyVariable, PyMethod
+from sphinx.domains.python import PyVariable, PyMethod
 from . import sip_struct
 from . import dox_struct
 from . import combiner
@@ -170,7 +170,7 @@ class _AutoGenOptions:
         if filt_opt:
             filt_set = frozenset(v.strip(' \n') for v in filt_opt.split(','))
             if not filt_set.issubset(filt_spec):
-                raise ValueError('Member filters "%s" invalid' % ','.join(filt_arg.difference(filt_spec)))
+                raise ValueError('Member filters "%s" invalid' % ','.join(filt_opt.difference(filt_spec)))
         else:
             filt_set = frozenset()
 
@@ -411,7 +411,7 @@ class _SIPAutoGenDirectiveMixin(_SIPDirectiveMixin):
     def _generate_properties(self, sip_klass):
         first = True
         for p in sip_klass.properties:
-            decl = combiner.combine_property(self.sip_spec, sip_klass, sip_prop)
+            prop_decl = combiner.combine_property(self.sip_spec, sip_klass, p)
 
             if not self.sip_options.gen_property(prop_decl): continue
 
@@ -420,7 +420,7 @@ class _SIPAutoGenDirectiveMixin(_SIPDirectiveMixin):
                 yield "**Properties**:"
                 yield ""
 
-            yield from self._generate_property(sip_klass, decl)
+            yield from self._generate_property(sip_klass, prop_decl)
 
 
     def _generate_property(self, sip_klass, prop_decl):
