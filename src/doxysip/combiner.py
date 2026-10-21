@@ -429,7 +429,7 @@ def combine_variable(sip_spec, sip_var, dox_var):
         qualifiers.append('static')
 
     var_decl = VariableDeclaration(sip_var.py_name.name,
-                                   var_type, 
+                                   var_type,
                                    is_const,
                                    qualifiers,
                                    description)
