@@ -64,25 +64,28 @@ class SIPSpecificationDirective(SphinxDirective):
         sip_project_dir = self.env.app.config.sip_toml_project
         d = os.path.join(self.env.app.confdir, sip_project_dir)
         d = os.path.normpath(d)
+
+        self.env.current_document['sip:spec'] = None
+
         try:
             sip_spec = sip_struct.get_sip_spec(sip_data, d, mod_name)
-            self.env.domaindata['sip']['sip_current_spec'] = sip_spec
-
-            mod_lines = [
-                '.. py:currentmodule:: ' + sip_spec.module.fq_py_name.name,
-                ''
-            ]
-
-            return _parse_generated_content(self.state, mod_lines)
-
         except sip_struct.UserException as e:
+
             text = '\n  '.join(e.text.split('\n'))
             msg = f'SIP errors while parsing spec file for module "{mod_name}":\n  {text}'
             raise self.error(msg) from None
 
         except Exception as e:
-            msg = f'Error while reading spec file for module "{mod_name}"'
-            raise self.error(msg) from e
+            msg = f'Error while reading spec file for module "{mod_name}": {e}'
+            raise self.error(msg) from None
+
+        self.env.current_document['sip:spec'] = sip_spec
+
+        mod_lines = [
+            '.. py:currentmodule:: ' + sip_spec.module.fq_py_name.name,
+            ''
+        ]
+        return _parse_generated_content(self.state, mod_lines)
 
 
 class _SIPDirectiveMixin:
@@ -100,11 +103,14 @@ class _SIPDirectiveMixin:
 
 
     def _get_loaded_spec(self):
-        self.sip_spec = self.env.domaindata['sip']['sip_current_spec']
-        if not self.sip_spec:
-            return self._generate_error("A SIP directive should be preceded by a `sip:currentmodule` directive.")
-        else:
-            return None
+        if 'sip:spec' not in self.env.current_document:
+            raise self.error("A SIP directive should be preceded by a `sip:currentmodule` directive.")
+
+        sip_spec = self.env.current_document['sip:spec']
+        if sip_spec is None:
+            raise self.debug('SIP module loading failed, skipping directive ' + self.name)
+
+        self.sip_spec = sip_spec
 
 
     def _find_matching_dox_class(self, sip_klass, kind):
@@ -216,8 +222,7 @@ class _SIPAutoGenDirectiveMixin(_SIPDirectiveMixin):
         LOGGER.debug('[doxysip] %s:%s: input:\n%s', source, lineno, self.block_text)
 
         #Get the currently loaded SIP specification
-        if err_nodes := self._get_loaded_spec():
-            return err_nodes
+        self._get_loaded_spec()
 
         self.sip_options = _AutoGenOptions(self.options, self.sip_member_filters)
 
